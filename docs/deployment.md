@@ -88,6 +88,26 @@ Ensure Ollama listens on the LAN (`OLLAMA_HOST=0.0.0.0` on that box) and that yo
 - **Logs:** `docker compose logs -f refinery`.
 - **Healthcheck:** the container reports health via `/healthz`; `docker ps` shows `healthy`.
 
-## CI/CD (planned)
+## CI/CD
 
-The intended pipeline mirrors the VAS wedding-portal setup: on push, **build the image, run the pytest suite, and push to GHCR** (`ghcr.io/vainasher/wikijs-ai-refinery-vas`), then deploy to the homelab. The compose file already references that image tag (`REFINERY_IMAGE`). The workflow will be added once the wedding-portal pipeline is used as the template — see the repo's `.github/workflows/` once present.
+Two GitHub Actions workflows mirror the VAS wedding-portal model.
+
+### `Tests` (`.github/workflows/test.yml`)
+On every push/PR to `main` (and manual dispatch): runs the **pytest** suite with coverage, then **builds the Docker image and smoke-tests `/healthz`** in a throwaway container. This is the gate the deploy depends on.
+
+### `Deploy` (`.github/workflows/deploy.yml`)
+Runs **after `Tests` succeeds on `main`** (only if the `DEPLOY_ENABLED` variable is `true`), or via manual dispatch (deploy/rollback, choose environment). A runner SSHes into the homelab **through the Cloudflare tunnel** and runs **`scripts/deploy.sh`** there — the runner never touches Docker. `deploy.sh` checks out the revision, builds an **SHA-tagged image**, brings the stack up, polls `/healthz`, and **auto-rolls back** to the previous tag on failure. Secrets travel as a base64 blob over SSH stdin (never on the command line or disk).
+
+`scripts/deploy.sh` is also usable by hand on the host: `deploy.sh deploy | rollback | status | logs`.
+
+### Required configuration (repo or environment scope)
+
+| Kind | Name | Purpose |
+|------|------|---------|
+| Variable | `DEPLOY_ENABLED` | Set to `true` to allow auto-deploys |
+| Secret | `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` | SSH into the homelab (via the tunnel) |
+| Variable | `DEPLOY_PORT`, `DEPLOY_PATH` | SSH port (default 22) and the repo path on the host |
+| Variable | `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_LAN_HOSTS`, `REFINERY_PORT`, `COMPOSE_PROFILES` | Non-secret runtime config passed into the deploy |
+| Secret | `REFINERY_SECRET_KEY`, `CLOUDFLARE_TUNNEL_TOKEN`, `REFINERY_BASIC_AUTH_USER/PASS` | Optional secrets injected into the deploy env |
+
+The homelab host needs Docker, this repo cloned at `DEPLOY_PATH`, and SSH reachable from the runner (e.g. a Cloudflare tunnel SSH route, or a self-hosted runner). Set `COMPOSE_PROFILES=tunnel` to have the deploy also run `cloudflared`.

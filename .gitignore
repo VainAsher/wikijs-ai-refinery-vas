@@ -9,6 +9,7 @@ data/
 .env
 .env.*
 !.env.example
+!.env.docker.example
 # Auto-generated symmetric key used to encrypt secrets at rest
 .secret_key
 **/.secret_key
@@ -36,6 +37,10 @@ htmlcov/
 .tox/
 .mypy_cache/
 .ruff_cache/
+
+# --- Deploy state (created on the homelab host by scripts/deploy.sh) ---------
+/.deploy/
+/logs/
 
 # --- Editor / OS -------------------------------------------------------------
 .idea/

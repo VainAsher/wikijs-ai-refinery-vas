@@ -1,0 +1,219 @@
+name: Deploy
+
+# ===========================================================================
+# Wiki.js AI Refinery — deployment workflow (Docker via SSH-through-tunnel).
+#
+# Mirrors the VAS wedding-portal model: a runner SSHes into the homelab deploy
+# host (reachable through the Cloudflare tunnel) and runs scripts/deploy.sh
+# THERE. The runner never touches Docker; the host owns the stack, the
+# refinery_data volume, and the rollback state. deploy.sh checks out the
+# revision, builds an SHA-tagged image, brings the stack up, polls /healthz,
+# and AUTO-ROLLS BACK on health failure.
+#
+# Triggers:
+#   - workflow_run: after "Tests" succeeds on main (and DEPLOY_ENABLED == 'true').
+#   - workflow_dispatch: manual deploy/rollback, choose environment.
+#
+# Required repo/environment secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY.
+# Optional secrets passed into the deploy env: REFINERY_SECRET_KEY,
+#   CLOUDFLARE_TUNNEL_TOKEN, REFINERY_BASIC_AUTH_USER, REFINERY_BASIC_AUTH_PASS.
+# Optional non-secret vars: DEPLOY_PORT, DEPLOY_PATH, REFINERY_PORT, OLLAMA_URL,
+#   OLLAMA_MODEL, OLLAMA_LAN_HOSTS, COMPOSE_PROFILES (e.g. "tunnel").
+# ===========================================================================
+
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        type: choice
+        default: production
+        options: [production, staging]
+      action:
+        description: Deployment action
+        required: true
+        type: choice
+        default: deploy
+        options: [deploy, rollback]
+      revision:
+        description: Git revision to deploy (defaults to the triggering commit).
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# Never let two deploys to the same environment overlap; never cancel one in flight.
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || 'production' }}
+    if: >-
+      ${{
+        vars.DEPLOY_ENABLED == 'true' &&
+        (
+          github.event_name == 'workflow_dispatch' ||
+          github.event.workflow_run.conclusion == 'success'
+        )
+      }}
+    runs-on: ubuntu-22.04
+    environment: ${{ github.event.inputs.environment || 'production' }}
+
+    env:
+      DEPLOY_ACTION: ${{ github.event.inputs.action || 'deploy' }}
+      DEPLOY_REVISION: ${{ github.event.inputs.revision || github.event.workflow_run.head_sha || github.sha }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/home/deploy/wikijs-ai-refinery-vas' }}
+
+    steps:
+      - name: Check out repository (metadata only)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_REVISION }}
+
+      - name: Validate deployment secrets
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY; do
+            [ -z "${!name:-}" ] && missing+=("$name")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf '::error::Missing required deployment secret(s): %s\n' "${missing[*]}"; exit 1
+          fi
+          echo "Required deployment secrets present."
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          for attempt in 1 2 3 4 5; do
+            if ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+              echo "Host key pinned (attempt $attempt)."; break
+            fi
+            [ "$attempt" -eq 5 ] && { echo "::error::Could not reach $DEPLOY_HOST:$DEPLOY_PORT to pin host key."; exit 1; }
+            sleep 5
+          done
+
+      - name: Preflight remote host
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" env WD_PATH="$DEPLOY_PATH" bash -seu <<'PREFLIGHT'
+          command -v docker >/dev/null 2>&1 || { echo "::error::docker not installed on host"; exit 1; }
+          docker info >/dev/null 2>&1 || { echo "::error::docker daemon not reachable on host"; exit 1; }
+          [ -f "$WD_PATH/scripts/deploy.sh" ] || { echo "::error::scripts/deploy.sh not found under $WD_PATH"; exit 1; }
+          echo "Preflight OK."
+          PREFLIGHT
+
+      - name: Deploy via SSH
+        env:
+          REFINERY_SECRET_KEY: ${{ secrets.REFINERY_SECRET_KEY }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          REFINERY_BASIC_AUTH_USER: ${{ secrets.REFINERY_BASIC_AUTH_USER }}
+          REFINERY_BASIC_AUTH_PASS: ${{ secrets.REFINERY_BASIC_AUTH_PASS }}
+          OLLAMA_URL: ${{ vars.OLLAMA_URL }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          OLLAMA_LAN_HOSTS: ${{ vars.OLLAMA_LAN_HOSTS }}
+          REFINERY_PORT: ${{ vars.REFINERY_PORT }}
+          COMPOSE_PROFILES: ${{ vars.COMPOSE_PROFILES }}
+        run: |
+          set -euo pipefail
+          # Build an opaque secret+config blob: each line "NAME <base64-value>",
+          # the whole thing base64'd again. base64-encoding every value means no
+          # shell metacharacter in a secret can break remote parsing, and it stays
+          # off the command line / shell history. Empty values are omitted.
+          emit() { [ -n "${2:-}" ] && printf '%s %s\n' "$1" "$(printf '%s' "$2" | base64 -w0)"; }
+          blob="$(
+            {
+              emit REFINERY_SECRET_KEY      "${REFINERY_SECRET_KEY:-}"
+              emit CLOUDFLARE_TUNNEL_TOKEN  "${CLOUDFLARE_TUNNEL_TOKEN:-}"
+              emit REFINERY_BASIC_AUTH_USER "${REFINERY_BASIC_AUTH_USER:-}"
+              emit REFINERY_BASIC_AUTH_PASS "${REFINERY_BASIC_AUTH_PASS:-}"
+              emit OLLAMA_URL               "${OLLAMA_URL:-}"
+              emit OLLAMA_MODEL             "${OLLAMA_MODEL:-}"
+              emit OLLAMA_LAN_HOSTS         "${OLLAMA_LAN_HOSTS:-}"
+              emit REFINERY_PORT            "${REFINERY_PORT:-}"
+              emit COMPOSE_PROFILES         "${COMPOSE_PROFILES:-}"
+              true
+            } | base64 -w0
+          )"
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" \
+            -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            env WD_BLOB="$blob" WD_PATH="$DEPLOY_PATH" WD_ACTION="$DEPLOY_ACTION" WD_REVISION="$DEPLOY_REVISION" \
+            bash -seu <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+          # Decode secrets/config into the environment, in memory only.
+          while read -r _n _v; do [ -n "$_n" ] && export "$_n=$(printf '%s' "$_v" | base64 -d)"; done \
+            < <(printf '%s' "$WD_BLOB" | base64 -d)
+          unset _n _v
+          cd "$WD_PATH"
+          export DEPLOY_REVISION="$WD_REVISION" DEPLOY_BRANCH="main"
+          chmod +x scripts/deploy.sh
+          bash scripts/deploy.sh "$WD_ACTION"
+          REMOTE
+
+      - name: Verify health
+        if: ${{ github.event.inputs.action != 'rollback' }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            env WD_PORT="${{ vars.REFINERY_PORT || '8000' }}" bash -seu <<'HEALTH'
+          if curl -fsS --max-time 10 "http://127.0.0.1:${WD_PORT}/healthz" >/dev/null; then
+            echo "refinery /healthz: OK"
+          else
+            echo "::error::refinery /healthz did not respond OK"; exit 1
+          fi
+          HEALTH
+
+      - name: Collect remote logs on failure
+        if: failure()
+        run: |
+          set -uo pipefail
+          mkdir -p ./deploy-artifacts
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" "cat '$DEPLOY_PATH/logs/deploy.log' 2>/dev/null; echo; cat /tmp/deploy-failure.log 2>/dev/null" \
+            > ./deploy-artifacts/deploy.log 2>/dev/null || echo "(no logs retrieved)" > ./deploy-artifacts/deploy.log
+
+      - name: Upload deployment logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-logs-${{ github.run_id }}
+          path: ./deploy-artifacts
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Deployment Summary"
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Environment | \`${{ github.event.inputs.environment || 'production' }}\` |"
+            echo "| Action | \`$DEPLOY_ACTION\` |"
+            echo "| Revision | \`$DEPLOY_REVISION\` |"
+            echo "| Host | \`$DEPLOY_HOST\` |"
+            echo "| Trigger | \`${{ github.event_name }}\` |"
+            echo "| Status | \`${{ job.status }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

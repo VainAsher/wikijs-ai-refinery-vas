@@ -1,0 +1,7 @@
+# Shell scripts and CI/container configs MUST be LF — they run on the Linux
+# homelab/CI, and CRLF would break the deploy script and the Docker entrypoint.
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+Dockerfile  text eol=lf
+.dockerignore text eol=lf

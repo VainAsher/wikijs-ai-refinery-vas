@@ -1,0 +1,74 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: Pytest
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # httpx is needed by the FastAPI TestClient (also pulled in by anthropic).
+          python -m pip install -r requirements.txt pytest pytest-cov httpx
+
+      - name: Run tests with coverage
+        run: python -m pytest -q --cov=refinery --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: warn
+
+  docker:
+    name: Docker image + health smoke
+    runs-on: ubuntu-22.04
+    needs: pytest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t vas-refinery:ci .
+
+      - name: Run container and wait for /healthz
+        run: |
+          set -euo pipefail
+          docker run -d --name refinery-ci -p 8000:8000 vas-refinery:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/healthz; then
+              echo; echo "Container healthy"; exit 0
+            fi
+            echo "Attempt $i: not ready yet..."; sleep 2
+          done
+          echo "::error::Container did not become healthy"; docker logs refinery-ci; exit 1
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs refinery-ci || true
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f refinery-ci || true
