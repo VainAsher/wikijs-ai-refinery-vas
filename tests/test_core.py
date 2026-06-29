@@ -4,7 +4,25 @@ from refinery.core import (
     scan_sensitive, normalise_assumptions, merge_ai_classification,
     transform_to_vas, ollama_base_url, brand_tokens, reference_source_orgs,
     compute_confidence, interpret_confidence, scrub_findings, apply_redactions,
+    normalise_dials, dials_directives, brand_compliance, brand_violations, DEFAULT_BRAND,
 )
+
+
+def test_normalise_dials_ignores_blanks_and_invalid():
+    d = normalise_dials({'tone': 'conversational', 'length_bias': '', 'audience': 'not_a_level'})
+    assert d['tone'] == 'conversational'        # valid override applied
+    assert d['length_bias'] == 'standard'       # blank -> default
+    assert d['audience'] == 'intermediate'      # invalid option -> default
+    text = dials_directives(d)
+    assert 'conversational' in text and 'call to action' in text.lower()
+
+
+def test_brand_compliance_deterministic_penalises_avoided_language():
+    clean = brand_compliance('A calm, practical guide to restarting your server.', DEFAULT_BRAND)
+    dirty = brand_compliance('This revolutionary, game-changer tool is best-in-class.', DEFAULT_BRAND)
+    assert clean['overall_score'] == 100 and clean['language_violations'] == []
+    assert dirty['overall_score'] < clean['overall_score']
+    assert 'revolutionary' in brand_violations('truly revolutionary', DEFAULT_BRAND)
 
 
 def test_scrub_findings_and_redact():

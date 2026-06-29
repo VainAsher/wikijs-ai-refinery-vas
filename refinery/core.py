@@ -66,6 +66,7 @@ class Classification:
     summary: str = ''
     tags: List[str] = dataclasses.field(default_factory=list)
     confidence: float = 0.0
+    brand_score: int = -1   # 0-100 brand-compliance score; -1 = not scored yet
     reasons: List[str] = dataclasses.field(default_factory=list)
     # VainAsherStudios refinery upgrade
     business_owner: str = 'VainAsherStudios'
@@ -479,7 +480,135 @@ def discover_ollama_url(current: str='', timeout: float=1.5) -> Optional[str]:
             continue
     return None
 
-def transform_to_vas(doc: SourceDoc, c: Classification, target_type: str, model: Optional[str]=None, url='http://localhost:11434/api/generate', context_text: str='') -> SourceDoc:
+# ---------------------------------------------------------------------------
+# Variation dials  (adapted from ForgeOS): tune voice/length/structure per run
+# ---------------------------------------------------------------------------
+DIALS_DEFAULTS: Dict[str, Any] = {
+    'tone': 'professional',            # professional | conversational | authoritative | playful | neutral
+    'audience': 'intermediate',        # beginner | intermediate | expert
+    'length_bias': 'standard',         # concise | standard | comprehensive
+    'citation_strictness': 'standard', # loose | standard | strict
+    'reading_grade': '',               # '' or a US grade level 3-16
+    'emoji_policy': 'none',            # none | sparing
+    'include_cta': True,
+}
+DIAL_OPTIONS: Dict[str, List[str]] = {
+    'tone': ['professional', 'conversational', 'authoritative', 'playful', 'neutral'],
+    'audience': ['beginner', 'intermediate', 'expert'],
+    'length_bias': ['concise', 'standard', 'comprehensive'],
+    'citation_strictness': ['loose', 'standard', 'strict'],
+    'emoji_policy': ['none', 'sparing'],
+}
+
+def normalise_dials(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Merge submitted dials over defaults, ignoring blanks/invalid options so a partial
+    form (or none) is always safe. Precedence: submitted value > built-in default."""
+    d = dict(DIALS_DEFAULTS)
+    if raw:
+        for k in DIALS_DEFAULTS:
+            v = raw.get(k)
+            if v in (None, ''):
+                continue
+            if k in DIAL_OPTIONS and str(v) not in DIAL_OPTIONS[k]:
+                continue
+            d[k] = v
+    cta = d['include_cta']
+    d['include_cta'] = cta if isinstance(cta, bool) else str(cta).lower() in ('1', 'true', 'yes', 'on')
+    return d
+
+def dials_directives(d: Dict[str, Any]) -> str:
+    """Render dials as an instruction block injected into the transform prompt."""
+    length_map = {'concise': 'Be concise — trim to the essentials (~30% shorter).',
+                  'standard': 'Use a standard length appropriate to the document type.',
+                  'comprehensive': 'Be comprehensive and thorough (~35% longer) without padding.'}
+    cite_map = {'loose': 'Cite sources only where it clearly helps.',
+                'standard': 'Cite key claims and reference the source where relevant.',
+                'strict': 'Cite every factual claim; flag anything unsupported as an assumption.'}
+    lines = [
+        f"- Tone: {d['tone']}.",
+        f"- Pitch the writing for a {d['audience']} audience.",
+        f"- {length_map.get(d['length_bias'], '')}",
+        f"- {cite_map.get(d['citation_strictness'], '')}",
+        f"- Emoji policy: {d['emoji_policy']}.",
+        "- End with a clear call to action." if d['include_cta'] else "- Do not add a call to action.",
+    ]
+    if str(d.get('reading_grade') or '').strip():
+        lines.append(f"- Aim for roughly US reading grade {d['reading_grade']}.")
+    return '\n'.join(l for l in lines if l.strip('- ').strip())
+
+
+# ---------------------------------------------------------------------------
+# Brand profile + compliance scoring  (adapted from ForgeOS brand_scorer)
+# ---------------------------------------------------------------------------
+DEFAULT_BRAND: Dict[str, Any] = {
+    'name': 'VainAsherStudios',
+    'tone_guide': ('Noir, technical, human, honest — hope beneath the cynicism. Clarity first for '
+                   'operational docs (SOPs, runbooks, customer guides); full brand voice for community, '
+                   'content, and creative work.'),
+    'core_values': ['Technical depth over hype', 'Honesty about risk and uncertainty',
+                    'Communities are built, not harvested', 'Leave systems better than we found them'],
+    'personality_traits': ['Direct and honest', 'Calm and practical', 'Teacher-like, patient',
+                           'Dry humour', 'Willing to admit uncertainty'],
+    'avoid_language': ['clickbait', 'game-changer', 'game changer', 'synergy', 'revolutionary',
+                       'cutting-edge', 'best-in-class', 'industry-leading', 'obviously', 'effortless',
+                       'unleash', 'supercharge'],
+}
+
+def brand_violations(text: str, brand: Dict[str, Any]) -> List[str]:
+    """Avoided words/phrases that actually appear in the text (whole-word, case-insensitive)."""
+    low = (text or '').lower()
+    found = []
+    for term in (brand.get('avoid_language') or []):
+        t = str(term).lower().strip()
+        if t and re.search(rf'(?<![\w-]){re.escape(t)}(?![\w-])', low):
+            found.append(t)
+    return sorted(set(found))
+
+def brand_compliance(text: str, brand: Dict[str, Any], model: Optional[str]=None,
+                     url='http://localhost:11434/api/generate') -> Dict[str, Any]:
+    """Score text 0-100 against the brand profile. With a model it asks the LLM for a
+    nuanced read (tone match + violations); without one it falls back to a deterministic
+    penalty for each avoided-language hit. Always returns a dict, never raises."""
+    violations = brand_violations(text, brand)
+    if model:
+        prompt = (
+            'Return JSON {"overall_score": 0-100, "tone_match": 0-1, "notes": "<one short sentence>"}.\n'
+            'Score how well the TEXT matches this brand.\n'
+            f'BRAND_NAME: {brand.get("name","")}\n'
+            f'TONE_GUIDE: {brand.get("tone_guide","")}\n'
+            f'AVOID_LANGUAGE: {", ".join(brand.get("avoid_language", []))}\n'
+            f'TEXT:\n{(text or "")[:8000]}'
+        )
+        data = ollama_json(prompt, model, url, timeout=90)
+        if data and isinstance(data.get('overall_score'), (int, float)):
+            return {'overall_score': int(max(0, min(100, data['overall_score']))),
+                    'tone_match': data.get('tone_match'),
+                    'language_violations': violations,
+                    'notes': str(data.get('notes', ''))[:300], 'method': 'llm'}
+    score = max(0, 100 - len(violations) * 8)
+    return {'overall_score': score, 'tone_match': None, 'language_violations': violations,
+            'notes': 'Deterministic check (no model): score = 100 − 8×avoided-language hits.',
+            'method': 'deterministic'}
+
+def load_brand(path) -> Dict[str, Any]:
+    """Load the structured brand profile, seeding a default file on first use and
+    merging it over DEFAULT_BRAND so a partial brand.yaml is always complete."""
+    from pathlib import Path as _Path
+    p = _Path(path)
+    if not p.exists():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(yaml.safe_dump(DEFAULT_BRAND, sort_keys=False, allow_unicode=True), encoding='utf-8')
+    merged = dict(DEFAULT_BRAND)
+    try:
+        loaded = yaml.safe_load(p.read_text('utf-8')) or {}
+        if isinstance(loaded, dict):
+            merged.update(loaded)
+    except Exception:
+        pass
+    return merged
+
+
+def transform_to_vas(doc: SourceDoc, c: Classification, target_type: str, model: Optional[str]=None, url='http://localhost:11434/api/generate', context_text: str='', dials: Optional[Dict[str, Any]]=None) -> SourceDoc:
     target_labels={'rewrite_into_sop':'SOP','rewrite_into_runbook':'runbook','rewrite_into_customer_guide':'customer guide','rewrite_into_support_template':'support reply template','rewrite_into_policy':'policy','rewrite_into_training':'training document','rewrite_into_moderation_playbook':'moderation playbook','rewrite_into_admin_guide':'game/community admin guide','rewrite_into_lesson_plan':'moderator/admin lesson plan','rewrite_into_youtube_script':'YouTube training script','rewrite_into_linkedin_post':'LinkedIn educational post','rewrite_into_twitch_outline':'Twitch stream segment outline','rewrite_into_discord_staff_guide':'Discord staff guide','rewrite_into_community_announcement':'community announcement'}
     target=target_labels.get(target_type,'VainAsherStudios document')
     prompt=f'''Return JSON with keys title, summary, markdown, assumptions.
@@ -496,6 +625,9 @@ Rules:
 - Treat the VainAsherStudios context as higher authority than the imported source.
 - Use VAS context for brand voice, service catalogue, tools, IaC, privacy rules, and operational assumptions.
 - If the source conflicts with VAS context, follow VAS context and list the conflict as an assumption/review note.
+
+VARIATION DIRECTIVES (tune voice, length, and structure):
+{dials_directives(normalise_dials(dials))}
 
 VAINASHERSTUDIOS_CONTEXT:
 {context_text[:16000] if context_text else 'No additional VAS context pack supplied.'}

@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 import time
 from refinery.connectors import CONNECTORS
-from refinery.core import SourceDoc, apply_redactions, build_wiki_path, clean_markdown, deterministic_classify, discover_ollama_url, enriched_markdown, load_taxonomy, merge_ai_classification, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_vas
+from refinery.core import DIAL_OPTIONS, DIALS_DEFAULTS, SourceDoc, apply_redactions, brand_compliance, build_wiki_path, clean_markdown, deterministic_classify, discover_ollama_url, enriched_markdown, load_brand, load_taxonomy, merge_ai_classification, normalise_dials, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_vas
 from refinery.db import Store, import_key_for, DocNotFound
 from refinery.jobs import JOBS
 from refinery.settings import Settings
@@ -19,6 +19,7 @@ STORE=Store(str(DB_PATH))
 SETTINGS=Settings(DATA/'settings.json')
 TAXONOMY=load_taxonomy('taxonomy.yml' if Path('taxonomy.yml').exists() else None)
 CONTEXT_DIR=DATA/'vas_context'; CONTEXT_DIR.mkdir(parents=True,exist_ok=True)
+BRAND_PATH=DATA/'brand.yaml'
 app=FastAPI(title='Wiki.js AI Refinery - VAS Community Ops')
 templates=Jinja2Templates(directory=str(BASE/'templates'))
 
@@ -350,7 +351,7 @@ def edit_alias(doc_id:int):
 @app.get('/docs/{doc_id}',response_class=HTMLResponse)
 def review_doc(request:Request,doc_id:int,notice:Optional[str]=None):
     row=STORE.get_doc(doc_id); c=STORE.classification(row)
-    return templates.TemplateResponse(request, 'review.html', {'row':row,'c':c,'taxonomy':TAXONOMY,'wiki_path':build_wiki_path(c),'content':row['content'],'context_packs':list_context_packs(),'findings':scrub_findings(row['content']),'notice':notice})
+    return templates.TemplateResponse(request, 'review.html', {'row':row,'c':c,'taxonomy':TAXONOMY,'wiki_path':build_wiki_path(c),'content':row['content'],'context_packs':list_context_packs(),'findings':scrub_findings(row['content']),'notice':notice,'dial_options':DIAL_OPTIONS,'dial_defaults':DIALS_DEFAULTS})
 
 
 @app.post('/docs/{doc_id}/redact')
@@ -393,15 +394,32 @@ def quick(doc_id:int,action:str=Form(...),reviewed_by:str=Form('')):
 
 
 @app.post('/docs/{doc_id}/transform')
-def transform_doc(doc_id:int,target_action:str=Form('rewrite_into_sop'),ollama_model:str=Form(''),context_pack:List[str]=Form([]),extra_context:str=Form('')):
+def transform_doc(doc_id:int,target_action:str=Form('rewrite_into_sop'),ollama_model:str=Form(''),context_pack:List[str]=Form([]),extra_context:str=Form(''),
+                  tone:str=Form(''),audience:str=Form(''),length_bias:str=Form(''),citation_strictness:str=Form(''),reading_grade:str=Form(''),emoji_policy:str=Form(''),include_cta:Optional[str]=Form(None)):
     row=STORE.get_doc(doc_id); c=STORE.classification(row); source=SourceDoc(title=row['title'],content=row['content'],source=row['source'],source_id=str(row['id']),source_url=row['source_url'] or '',raw_metadata={'row_id':row['id']})
     context_text=read_context_packs(context_pack, extra_context)
-    draft=transform_to_vas(source,c,target_action,ollama_model or SETTINGS.get('ollama_model') or None,SETTINGS.get('ollama_url'),context_text=context_text)
+    dials=normalise_dials({'tone':tone,'audience':audience,'length_bias':length_bias,'citation_strictness':citation_strictness,'reading_grade':reading_grade,'emoji_policy':emoji_policy,'include_cta':include_cta if include_cta is not None else True})
+    model=ollama_model or SETTINGS.get('ollama_model') or None
+    draft=transform_to_vas(source,c,target_action,model,SETTINGS.get('ollama_url'),context_text=context_text,dials=dials)
     dc=deterministic_classify(draft,TAXONOMY); dc.source_org='vainasherstudios'; dc.source_role='owned'; dc.reuse_policy='owned_original'; dc.adaptation_action=target_action; dc.rewrite_status='draft_generated'; dc.review_status='needs_review'; dc.authority='draft'; dc.canonical=False; dc.customer_safe=False; dc.transform_source_doc_id=str(doc_id); dc.canonical_target=suggest_canonical_target(dc); dc.tags=sorted(set(dc.tags+['vas-transform','draft-generated']))
+    bc=brand_compliance(draft.content, load_brand(BRAND_PATH), model, SETTINGS.get('ollama_url')); dc.brand_score=bc['overall_score']
+    if bc['language_violations']: dc.reasons.append('Brand: avoided language found — '+', '.join(bc['language_violations']))
     new_id=STORE.add_doc(draft,dc,build_wiki_path(dc))
-    c.adaptation_action=target_action; c.rewrite_status='draft_generated'; c.canonical_target=dc.canonical_target; c.transform_notes=f'Draft created as document #{new_id}'
+    c.adaptation_action=target_action; c.rewrite_status='draft_generated'; c.canonical_target=dc.canonical_target; c.transform_notes=f'Draft created as document #{new_id} (brand {bc["overall_score"]}/100)'
     STORE.update_doc(doc_id,c,build_wiki_path(c))
     return RedirectResponse(f'/docs/{new_id}',status_code=303)
+
+
+@app.post('/docs/{doc_id}/brand-score')
+def brand_score_doc(doc_id:int):
+    """Re-score the current document content against the brand profile on demand."""
+    row=STORE.get_doc(doc_id); c=STORE.classification(row)
+    bc=brand_compliance(row['content'], load_brand(BRAND_PATH), SETTINGS.get('ollama_model') or None, SETTINGS.get('ollama_url'))
+    c.brand_score=bc['overall_score']
+    msg=f'Brand compliance: {bc["overall_score"]}/100 ({bc["method"]})'
+    if bc['language_violations']: msg+=' — avoided language: '+', '.join(bc['language_violations'])
+    STORE.update_doc(doc_id,c,build_wiki_path(c))
+    return RedirectResponse(f'/docs/{doc_id}?notice={msg.replace(" ","+")}',status_code=303)
 
 
 @app.post('/docs/{doc_id}/publish')
