@@ -123,6 +123,73 @@ def interpret_confidence(score: float) -> str:
     if score >= 0.30: return 'low'
     return 'very_low'
 
+
+@dataclasses.dataclass
+class Finding:
+    """One detected secret/PII span. Backs the redaction gate (adapted from
+    CrucibleOS's Scrubber): a human reviews these and redacts before publishing."""
+    kind: str
+    severity: str   # critical | high | medium | low
+    match: str
+    start: int
+    end: int
+
+    @property
+    def placeholder(self) -> str:
+        return f'[REDACTED:{self.kind}]'
+
+    @property
+    def preview(self) -> str:
+        """Partially-masked snippet so the gate is reviewable without fully re-exposing
+        the secret in the table."""
+        s = self.match
+        if len(s) <= 8:
+            return (s[0] + '***' + s[-1]) if len(s) > 2 else '***'
+        return s[:3] + '…' + s[-3:]
+
+
+# (kind, severity, pattern). Order matters: earlier/critical patterns win on overlap.
+_SCRUB_PATTERNS: List[Tuple[str, str, str]] = [
+    ('private_key', 'critical', r'-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----'),
+    ('aws_access_key', 'critical', r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'),
+    ('aws_secret_key', 'critical', r'(?i)aws_secret_access_key\s*[:=]\s*[\'"]?([A-Za-z0-9/+]{40})[\'"]?'),
+    ('gcp_api_key', 'critical', r'\bAIza[0-9A-Za-z\-_]{35}\b'),
+    ('slack_token', 'critical', r'\bxox[baprs]-[0-9A-Za-z-]{10,}\b'),
+    ('github_token', 'critical', r'\bgh[pousr]_[A-Za-z0-9]{20,}\b'),
+    ('jwt', 'high', r'\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b'),
+    ('bearer_token', 'high', r'(?i)\bbearer\s+[A-Za-z0-9._\-]{16,}'),
+    ('password_assignment', 'high', r'(?i)\b(?:password|passwd|pwd|secret|api[_-]?key|token)\b\s*[:=]\s*[\'"]?([^\s\'"]{6,})'),
+    ('public_ipv4', 'medium', r'\b(?!(?:10|127)\.)(?!192\.168\.)(?!172\.(?:1[6-9]|2\d|3[01])\.)(?:\d{1,3}\.){3}\d{1,3}\b'),
+    ('email', 'medium', r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b'),
+    ('private_ipv4', 'low', r'\b(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\b'),
+    ('mac_address', 'low', r'\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b'),
+]
+_SCRUB_COMPILED = [(k, s, re.compile(p)) for k, s, p in _SCRUB_PATTERNS]
+
+
+def scrub_findings(text: str) -> List[Finding]:
+    """Find all secret/PII spans, then drop overlaps keeping the earliest/longest
+    (so an email inside a longer credential line isn't double-reported)."""
+    raw: List[Finding] = []
+    for kind, sev, pat in _SCRUB_COMPILED:
+        for m in pat.finditer(text or ''):
+            raw.append(Finding(kind=kind, severity=sev, match=m.group(0), start=m.start(), end=m.end()))
+    raw.sort(key=lambda f: (f.start, -(f.end - f.start)))
+    pruned: List[Finding] = []
+    last_end = -1
+    for f in raw:
+        if f.start >= last_end:
+            pruned.append(f); last_end = f.end
+    return pruned
+
+
+def apply_redactions(text: str, findings: List[Finding]) -> str:
+    """Replace each finding's exact match with its placeholder. Literal replacement is
+    order-independent and immune to offset drift, so selecting a subset is safe."""
+    for f in findings:
+        text = text.replace(f.match, f.placeholder)
+    return text
+
 # ---------------------------------------------------------------------------
 # Source registry
 # ---------------------------------------------------------------------------

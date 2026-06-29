@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <p><a href="/">‹ Back to in-flight docs</a></p>
+{% if notice %}<div class="card notice ok">{{ notice }}</div>{% endif %}
 <form method="post" action="/docs/{{ row.id }}/save" id="doc-edit-form">
   <div class="stickybar">
     <div><strong>{{ c.title }}</strong><br><span class="muted small">Doc #{{ row.id }} · source {{ row.source }} · path <code>{{ wiki_path }}</code></span></div>
@@ -83,6 +84,32 @@
   </div>
   {% if row.publish_message %}<p class="notice {% if row.published %}ok{% else %}warn{% endif %}" style="margin-top:12px">{{ row.publish_message }}</p>{% endif %}
 </div>
+
+<!-- Redaction gate: surfaces detected secrets/PII for one-click redaction before publish -->
+{% if findings %}
+<details class="section" open>
+  <summary>Sensitive content gate <span class="sub">— {{ findings|length }} finding(s) detected{% for f in findings if f.severity in ['critical','high'] %}{% if loop.first %} · <span class="pill danger">action recommended</span>{% endif %}{% endfor %}</span></summary>
+  <div class="body">
+    <p class="muted small">Pattern-detected secrets/PII in the stored content. Redacting replaces the exact match with a <code>[REDACTED:kind]</code> placeholder and refreshes the PII/secret flags. Critical/high items are pre-selected.</p>
+    <form method="post" action="/docs/{{ row.id }}/redact">
+      <div class="table-wrap"><table class="responsive">
+        <thead><tr><th>Redact</th><th>Kind</th><th>Severity</th><th>Preview</th></tr></thead>
+        <tbody>
+        {% for f in findings %}
+        <tr>
+          <td data-label="Redact"><input type="checkbox" name="redact" value="{{ loop.index0 }}" style="width:auto" {% if f.severity in ['critical','high'] %}checked{% endif %}></td>
+          <td data-label="Kind"><code>{{ f.kind }}</code></td>
+          <td data-label="Severity"><span class="pill {% if f.severity=='critical' %}danger{% elif f.severity=='high' %}warn{% elif f.severity=='low' %}ok{% endif %}">{{ f.severity }}</span></td>
+          <td data-label="Preview"><code>{{ f.preview }}</code></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      <div class="actions" style="margin-top:10px"><button class="secondary" data-tip="Replaces the selected matches with [REDACTED:kind] in the stored content.">Redact selected</button></div>
+    </form>
+  </div>
+</details>
+{% endif %}
 
 <!-- Transform: an advanced/expert move, collapsed by default -->
 <details class="section">

@@ -58,6 +58,26 @@ def test_import_reports_progress_job(client, tmp_path):
     assert done and done[-1]['total'] == 3 and done[-1]['done'] == 3
 
 
+def test_redaction_gate_flow(client, tmp_path):
+    # import a doc containing a secret, confirm the gate detects it, then redact it
+    src = tmp_path / 'sec'; src.mkdir()
+    (src / 's.md').write_text('# Server\nUse key AKIAIOSFODNN7EXAMPLE to connect.', encoding='utf-8')
+    client.post('/bulk/import-source-dirs',
+                data={'source_dirs': f'employer_hosting|{src}', 'limit': '0'}, follow_redirects=False)
+    _wait_for_jobs(client)
+    doc_id = client.get('/?q=Server&page_size=100')  # find the doc id from the queue
+    import re as _re
+    m = _re.search(r'/docs/(\d+)', doc_id.text)
+    assert m, 'doc not found in queue'
+    did = m.group(1)
+    page = client.get(f'/docs/{did}')
+    assert 'Sensitive content gate' in page.text and 'aws_access_key' in page.text
+    r = client.post(f'/docs/{did}/redact', data={'redact': ['0']}, follow_redirects=False)
+    assert r.status_code == 303
+    after = client.get(f'/docs/{did}/markdown')
+    assert 'AKIAIOSFODNN7EXAMPLE' not in after.text and '[REDACTED:aws_access_key]' in after.text
+
+
 def test_config_save_roundtrip(client):
     r = client.post('/config/save',
                     data={'ollama_url': 'http://localhost:11434/api/generate',

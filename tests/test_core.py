@@ -3,8 +3,25 @@ from refinery.core import (
     source_governance, build_wiki_path, suggest_canonical_target, slugify,
     scan_sensitive, normalise_assumptions, merge_ai_classification,
     transform_to_vas, ollama_base_url, brand_tokens, reference_source_orgs,
-    compute_confidence, interpret_confidence,
+    compute_confidence, interpret_confidence, scrub_findings, apply_redactions,
 )
+
+
+def test_scrub_findings_and_redact():
+    text = ('Contact admin@example.com. AWS key AKIAIOSFODNN7EXAMPLE. '
+            'github_token ghp_' + 'a' * 36 + '. Internal host 10.0.0.5.')
+    findings = scrub_findings(text)
+    kinds = {f.kind for f in findings}
+    assert 'email' in kinds and 'aws_access_key' in kinds and 'github_token' in kinds
+    # critical items carry the right severity and a masked preview (not the full secret)
+    aws = next(f for f in findings if f.kind == 'aws_access_key')
+    assert aws.severity == 'critical' and 'AKIAIOSFODNN7EXAMPLE' not in aws.preview
+    # redacting the critical/high subset removes the literals and inserts placeholders
+    redactable = [f for f in findings if f.severity in ('critical', 'high')]
+    out = apply_redactions(text, redactable)
+    assert 'AKIAIOSFODNN7EXAMPLE' not in out and 'ghp_' not in out
+    assert '[REDACTED:aws_access_key]' in out
+    assert 'admin@example.com' in out  # email was medium, not in the chosen subset
 
 
 def test_compute_confidence_signals_and_bands():

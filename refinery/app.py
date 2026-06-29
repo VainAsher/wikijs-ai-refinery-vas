@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 import time
 from refinery.connectors import CONNECTORS
-from refinery.core import SourceDoc, build_wiki_path, clean_markdown, deterministic_classify, discover_ollama_url, enriched_markdown, load_taxonomy, merge_ai_classification, ollama_json, ollama_status, publish_to_wikijs, slugify, suggest_canonical_target, transform_to_vas
+from refinery.core import SourceDoc, apply_redactions, build_wiki_path, clean_markdown, deterministic_classify, discover_ollama_url, enriched_markdown, load_taxonomy, merge_ai_classification, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_vas
 from refinery.db import Store, import_key_for, DocNotFound
 from refinery.jobs import JOBS
 from refinery.settings import Settings
@@ -348,9 +348,27 @@ def edit_alias(doc_id:int):
 
 
 @app.get('/docs/{doc_id}',response_class=HTMLResponse)
-def review_doc(request:Request,doc_id:int):
+def review_doc(request:Request,doc_id:int,notice:Optional[str]=None):
     row=STORE.get_doc(doc_id); c=STORE.classification(row)
-    return templates.TemplateResponse(request, 'review.html', {'row':row,'c':c,'taxonomy':TAXONOMY,'wiki_path':build_wiki_path(c),'content':row['content'],'context_packs':list_context_packs()})
+    return templates.TemplateResponse(request, 'review.html', {'row':row,'c':c,'taxonomy':TAXONOMY,'wiki_path':build_wiki_path(c),'content':row['content'],'context_packs':list_context_packs(),'findings':scrub_findings(row['content']),'notice':notice})
+
+
+@app.post('/docs/{doc_id}/redact')
+def redact_doc(doc_id:int,redact:List[str]=Form([])):
+    """Redaction gate: replace the selected detected secrets/PII with placeholders in
+    the stored content, then refresh the sensitivity flags. Findings are recomputed
+    from the current content so selection-by-index stays correct."""
+    row=STORE.get_doc(doc_id); c=STORE.classification(row); content=row['content']
+    findings=scrub_findings(content)
+    sel={int(i) for i in redact if str(i).isdigit()}
+    chosen=[f for idx,f in enumerate(findings) if idx in sel]
+    if not chosen:
+        return RedirectResponse(f'/docs/{doc_id}',status_code=303)
+    new=apply_redactions(content,chosen)
+    pii,secrets,_=scan_sensitive(new); c.contains_pii=pii; c.contains_secrets=secrets
+    if 'redacted' not in c.tags: c.tags.append('redacted')
+    STORE.update_doc(doc_id,c,build_wiki_path(c),content=new)
+    return RedirectResponse(f'/docs/{doc_id}?notice=Redacted+{len(chosen)}+item(s)',status_code=303)
 
 
 @app.post('/docs/{doc_id}/save')
