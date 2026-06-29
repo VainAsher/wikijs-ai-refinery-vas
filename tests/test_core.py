@@ -3,7 +3,31 @@ from refinery.core import (
     source_governance, build_wiki_path, suggest_canonical_target, slugify,
     scan_sensitive, normalise_assumptions, merge_ai_classification,
     transform_to_vas, ollama_base_url, brand_tokens, reference_source_orgs,
+    compute_confidence, interpret_confidence,
 )
+
+
+def test_compute_confidence_signals_and_bands():
+    # A rich, label-authoritative, well-resolved doc should land in the 'high' band...
+    strong = compute_confidence(label_authoritative=True, source_org_known=True,
+                                service_known=True, top_service_hits=3, service_candidates=2,
+                                doc_type_known=True, content_len=2000)
+    assert strong >= 0.75 and interpret_confidence(strong) == 'high'
+    # ...while a thin, unresolved doc should be low and clamped into range.
+    weak = compute_confidence(content_len=20)
+    assert 0.05 <= weak <= 1.0 and interpret_confidence(weak) in ('low', 'very_low')
+    assert strong > weak
+
+
+def test_classify_sets_real_confidence(taxonomy):
+    # The classifier should produce a varying, computed confidence (not the old flat 0.35).
+    rich = deterministic_classify(SourceDoc(
+        title='Minecraft Server Restart Runbook',
+        content='Restart the spigot server, check modpack, restore backup. ' * 20,
+        source='employer_hosting', source_id='r1'), taxonomy)
+    thin = deterministic_classify(SourceDoc(title='x', content='hi', source='mystery', source_id='t1'), taxonomy)
+    assert rich.confidence > thin.confidence
+    assert rich.confidence != 0.35
 
 
 def test_slugify():

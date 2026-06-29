@@ -9,6 +9,9 @@ data/
 .env
 .env.*
 !.env.example
+# Auto-generated symmetric key used to encrypt secrets at rest
+.secret_key
+**/.secret_key
 
 # --- Python ------------------------------------------------------------------
 __pycache__/

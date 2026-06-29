@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 import time
 from refinery.connectors import CONNECTORS
-from refinery.core import SourceDoc, build_wiki_path, clean_markdown, deterministic_classify, enriched_markdown, load_taxonomy, merge_ai_classification, ollama_json, ollama_status, publish_to_wikijs, slugify, suggest_canonical_target, transform_to_vas
+from refinery.core import SourceDoc, build_wiki_path, clean_markdown, deterministic_classify, discover_ollama_url, enriched_markdown, load_taxonomy, merge_ai_classification, ollama_json, ollama_status, publish_to_wikijs, slugify, suggest_canonical_target, transform_to_vas
 from refinery.db import Store, import_key_for, DocNotFound
 from refinery.jobs import JOBS
 from refinery.settings import Settings
@@ -449,6 +449,17 @@ def config_page(request:Request, notice:Optional[str]=None):
 def config_save(ollama_url:str=Form(''),ollama_model:str=Form(''),wikijs_url:str=Form(''),wikijs_token:str=Form('')):
     SETTINGS.save({'ollama_url':ollama_url,'ollama_model':ollama_model,'wikijs_url':wikijs_url,'wikijs_token':wikijs_token})
     return RedirectResponse('/config?notice=Settings+saved',status_code=303)
+
+
+@app.post('/config/discover')
+def config_discover():
+    """Auto-detect a reachable Ollama server (Docker/localhost/env) and save its URL,
+    so the operator doesn't have to know where it's running."""
+    found=discover_ollama_url(SETTINGS.get('ollama_url'))
+    if found:
+        SETTINGS.save({'ollama_url':found})
+        return RedirectResponse(f'/config?notice=Found+Ollama+at+{found}',status_code=303)
+    return RedirectResponse('/config?notice=No+Ollama+server+found+on+Docker+or+localhost',status_code=303)
 
 
 @app.post('/config/test-ollama')

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import dataclasses, datetime as dt, json, re
+import dataclasses, datetime as dt, json, os, re
 from typing import Any, Dict, List, Optional, Tuple
 import requests, yaml
 
@@ -97,6 +97,31 @@ def scan_sensitive(content: str)->Tuple[str,str,List[str]]:
     secrets='possible' if any(x in findings for x in ['api_key_word','aws_key_possible','github_token_possible','jwt_possible']) else 'false'
     if any(x in findings for x in ['aws_key_possible','github_token_possible','jwt_possible']): secrets='likely'
     return pii,secrets,findings
+
+def compute_confidence(*, label_authoritative: bool=False, source_org_known: bool=False,
+                       service_known: bool=False, top_service_hits: int=0, service_candidates: int=0,
+                       doc_type_known: bool=False, content_len: int=0) -> float:
+    """Deterministic 0..1 confidence in the auto-classification, from how much real
+    signal we actually had (adapted from CrucibleOS's confidence model). Strong, named
+    signals (an authoritative import label, multiple keyword hits, a resolved doc_type)
+    raise it; thin or ambiguous input lowers it. This replaces the old flat 0.35 so the
+    review queue can surface low-confidence docs for human attention first."""
+    score = 0.40  # baseline for any deterministic pass
+    if label_authoritative:      score += 0.20   # org came from an exact, trusted import label
+    elif source_org_known:       score += 0.10   # org inferred from content/url
+    if service_known:            score += 0.10 + min(top_service_hits, 3) * 0.05  # more keyword hits => surer
+    if doc_type_known:           score += 0.08
+    if service_candidates > 1:   score += 0.05   # corroborating signals across services
+    if content_len < 200:        score -= 0.15   # too little text to trust the call
+    if not service_known and not doc_type_known: score -= 0.10  # nothing concrete resolved
+    return round(max(0.05, min(1.0, score)), 2)
+
+def interpret_confidence(score: float) -> str:
+    """Human-readable band for a 0..1 confidence score."""
+    if score >= 0.75: return 'high'
+    if score >= 0.50: return 'medium'
+    if score >= 0.30: return 'low'
+    return 'very_low'
 
 # ---------------------------------------------------------------------------
 # Source registry
@@ -263,11 +288,11 @@ def deterministic_classify(doc: SourceDoc, taxonomy: Dict[str,List[str]]) -> Cla
         # A managed tool's own documentation is about that tool: the source label is
         # the strongest signal (Authentik docs -> service=authentik), overriding keyword
         # noise. Keyword-matched services are still kept as secondary tags.
-        c.service=c.source_org; c.confidence+=.1
+        c.service=c.source_org
         for svc,_n in [(c.source_org,0)]+ranked:
             if svc not in c.tags: c.tags.append(svc)
     elif ranked:
-        c.service=ranked[0][0]; c.confidence+=.08
+        c.service=ranked[0][0]
         for svc,_n in ranked:  # multi-topic docs keep every matched service as a tag
             if svc not in c.tags: c.tags.append(svc)
     if len(ranked)>1:
@@ -292,6 +317,16 @@ def deterministic_classify(doc: SourceDoc, taxonomy: Dict[str,List[str]]) -> Cla
     pii,secrets,findings=scan_sensitive(doc.content); c.contains_pii=pii; c.contains_secrets=secrets
     if findings: c.tags.append('sensitive-scan-hit'); c.reasons.append('Sensitive scanner findings: '+', '.join(findings)); c.customer_safe=False
     if c.risk_level in ['high','critical']: c.reasons.append('Risk level requires human review.')
+    c.confidence=compute_confidence(
+        label_authoritative=(c.source_org!='unknown' and (doc.source or '').strip().lower()==c.source_org),
+        source_org_known=(c.source_org!='unknown'),
+        service_known=(c.service!='unknown'),
+        top_service_hits=(ranked[0][1] if ranked else 0),
+        service_candidates=len(ranked),
+        doc_type_known=(c.doc_type!='unknown'),
+        content_len=len(doc.content or ''),
+    )
+    c.reasons.append(f'Classification confidence: {interpret_confidence(c.confidence)} ({c.confidence:.2f}).')
     c.canonical_target=suggest_canonical_target(c)
     return c
 
@@ -356,6 +391,26 @@ def ollama_status(generate_url='http://localhost:11434/api/generate', timeout: i
         return {'up': True, 'base': base, 'models': sorted(models, key=lambda m: m['name']), 'loaded': loaded}
     except Exception as e:
         return {'up': False, 'base': base, 'models': [], 'loaded': [], 'error': str(e)}
+
+def discover_ollama_url(current: str='', timeout: float=1.5) -> Optional[str]:
+    """Probe the usual places an Ollama server lives and return the first reachable
+    /api/generate URL, or None. Order: explicit OLLAMA_URL env, the currently
+    configured value, the Docker service name, then localhost. Adapted from ForgeOS's
+    discovery chain, trimmed to the hosts that matter for a local workbench."""
+    candidates = []
+    for u in (os.getenv('OLLAMA_URL', ''), current,
+              'http://ollama:11434', 'http://host.docker.internal:11434',
+              'http://127.0.0.1:11434', 'http://localhost:11434'):
+        base = ollama_base_url(u) if u else ''
+        if base and base not in candidates:
+            candidates.append(base)
+    for base in candidates:
+        try:
+            if requests.get(f'{base}/api/tags', timeout=timeout).ok:
+                return f'{base}/api/generate'
+        except Exception:
+            continue
+    return None
 
 def transform_to_vas(doc: SourceDoc, c: Classification, target_type: str, model: Optional[str]=None, url='http://localhost:11434/api/generate', context_text: str='') -> SourceDoc:
     target_labels={'rewrite_into_sop':'SOP','rewrite_into_runbook':'runbook','rewrite_into_customer_guide':'customer guide','rewrite_into_support_template':'support reply template','rewrite_into_policy':'policy','rewrite_into_training':'training document','rewrite_into_moderation_playbook':'moderation playbook','rewrite_into_admin_guide':'game/community admin guide','rewrite_into_lesson_plan':'moderator/admin lesson plan','rewrite_into_youtube_script':'YouTube training script','rewrite_into_linkedin_post':'LinkedIn educational post','rewrite_into_twitch_outline':'Twitch stream segment outline','rewrite_into_discord_staff_guide':'Discord staff guide','rewrite_into_community_announcement':'community announcement'}

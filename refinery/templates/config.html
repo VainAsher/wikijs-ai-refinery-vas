@@ -16,6 +16,7 @@
     <form method="post" action="/config/save">
       <label>Ollama URL <span class="help" tabindex="0" data-tip="The /api/generate endpoint of your local Ollama server. Health/model lookups reuse its host.">?</span> <span class="muted small">({{ settings.ollama_url.source }})</span></label>
       <input name="ollama_url" value="{{ settings.ollama_url.value }}" placeholder="http://localhost:11434/api/generate">
+      <p class="hint"><button type="submit" class="ghost" formaction="/config/discover" formmethod="post" style="width:auto;padding:5px 10px">Auto-detect Ollama</button> <span class="muted small">probes Docker &amp; localhost and fills the URL in.</span></p>
 
       <label>Default Ollama model <span class="help" tabindex="0" data-tip="Used for AI classification and transforms when no per-action model is given. Blank = deterministic only.">?</span> <span class="muted small">({{ settings.ollama_model.source }})</span></label>
       {% if ollama.up and ollama.models %}
@@ -37,7 +38,7 @@
 
       <div class="actions" style="margin-top:12px"><button>Save settings</button></div>
     </form>
-    <p class="muted small">Token is stored in <code>data/settings.json</code> and never shown back here. To clear a value, edit or delete that file.</p>
+    <p class="muted small">Token is <strong>encrypted at rest</strong> in <code>data/settings.json</code> (key in <code>data/.secret_key</code>, or set <code>REFINERY_SECRET_KEY</code>) and never shown back here. To clear a value, edit or delete that file.</p>
   </div>
 
   <div class="card">
