@@ -11,7 +11,7 @@
 <!-- STEP 1: import -->
 <div class="card">
   <div class="step" style="margin-bottom:10px"><span class="num">1</span><h3 style="margin:0">Import source directories</h3></div>
-  <p class="muted small">One directory per line as <code>source_label|path</code>. Recognised labels (<code>employer_hosting</code>, <code>competitor_hosting_1</code>, <code>ovh</code>, <code>authentik</code>, …) get reference-only / rewrite-required governance automatically. Re-importing is safe — existing docs are refreshed, not duplicated.</p>
+  <p class="muted small">One directory per line as <code>source_label|path</code>. Recognised labels (<code>employer_hosting</code>, <code>competitor_hosting_1</code>, <code>infrastructure_provider_1</code>, <code>authentik</code>, …) get reference-only / rewrite-required governance automatically. Re-importing is safe — existing docs are refreshed, not duplicated.</p>
   <form method="post" action="/bulk/import-source-dirs">
     <label>Source directories <span class="help" tabindex="0" data-tip="Each line: a label and a folder path. Subfolders are scanned recursively for .md files.">?</span></label>
     <textarea name="source_dirs" placeholder="employer_hosting|C:\docs\raw\employer&#10;competitor_hosting_1|C:\docs\raw\competitor_a&#10;authentik|C:\docs\raw\authentik"></textarea>

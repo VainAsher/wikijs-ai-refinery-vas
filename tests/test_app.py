@@ -72,7 +72,7 @@ def test_publish_without_config_reports_message(client, tmp_path):
     # import one doc, then try to publish with no Wiki.js config -> friendly message, no crash
     src = tmp_path / 'raw2'; src.mkdir()
     (src / 'b.md').write_text('# Email Setup\nSPF DKIM DMARC mailbox.', encoding='utf-8')
-    client.post('/bulk/import-source-dirs', data={'source_dirs': f'ovh|{src}', 'limit': '0'}, follow_redirects=False)
+    client.post('/bulk/import-source-dirs', data={'source_dirs': f'infrastructure_provider_1|{src}', 'limit': '0'}, follow_redirects=False)
     _wait_for_jobs(client)
-    listing = client.get('/?source_org=ovh')
+    listing = client.get('/?source_org=infrastructure_provider_1')
     assert 'Email Setup' in listing.text

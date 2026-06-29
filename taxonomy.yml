@@ -115,8 +115,8 @@ source_orgs:
   - employer_hosting
   - competitor_hosting_1
   - competitor_hosting_2
-  - ovh
-  - hetzner
+  - infrastructure_provider_1
+  - infrastructure_provider_2
   # Managed-service documentation sources (tools VAS operates/maintains)
   - authentik
   - pterodactyl

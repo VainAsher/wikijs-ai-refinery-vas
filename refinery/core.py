@@ -11,7 +11,7 @@ DEFAULT_TAXONOMY = {
  'review_statuses':['needs_review','reviewed','rejected'],
  'services':['website_hosting','website_development','managed_it','business_email','ai_workflows','automation','wordpress','nextcloud','invoice_ninja','mailcow','authentik','traefik','cloudflare','proxmox','backup','monitoring','billing','pterodactyl','minecraft','project_zomboid','rust','discord','twitch','youtube','linkedin','canvas','gaming_community_management','moderator_training','admin_training','game_server_hosting','unknown'],
  'domains':['vain_asher_studios','client','community','personal','household','wedding','employer_hosting','game_dev','managed_it','web_hosting','web_development','ai_workflows','gaming_community_ops','moderator_training','content_creation','game_server_hosting','unknown'],
- 'source_orgs':['vainasherstudios','employer_hosting','competitor_hosting_1','competitor_hosting_2','ovh','hetzner','authentik','pterodactyl','rust','canvas','traefik','mailcow','nextcloud','proxmox','cloudflare','invoice_ninja','wikijs','zammad','vaultwarden','paperless','forgejo','documenso','coolify','n8n','client','internal','community_reference','unknown'],
+ 'source_orgs':['vainasherstudios','employer_hosting','competitor_hosting_1','competitor_hosting_2','infrastructure_provider_1','infrastructure_provider_2','authentik','pterodactyl','rust','canvas','traefik','mailcow','nextcloud','proxmox','cloudflare','invoice_ninja','wikijs','zammad','vaultwarden','paperless','forgejo','documenso','coolify','n8n','client','internal','community_reference','unknown'],
  'source_roles':['canonical','owned','reference_only','evidence','imported_source','competitor_reference','employer_reference','infrastructure_reference','vendor_documentation','community_reference','training_reference','unknown'],
  'reuse_policies':['owned_original','rewrite_required','reference_only','quote_prohibited','review_required','forbidden','owned_training_material','unknown'],
  'adaptation_actions':['none','reference_only','rewrite_into_sop','rewrite_into_runbook','rewrite_into_customer_guide','rewrite_into_support_template','rewrite_into_policy','rewrite_into_training','rewrite_into_moderation_playbook','rewrite_into_admin_guide','rewrite_into_lesson_plan','rewrite_into_youtube_script','rewrite_into_linkedin_post','rewrite_into_twitch_outline','rewrite_into_discord_staff_guide','rewrite_into_community_announcement','gap_analysis_only','reject_archive'],
@@ -102,8 +102,8 @@ def scan_sensitive(content: str)->Tuple[str,str,List[str]]:
 # Source registry
 # ---------------------------------------------------------------------------
 # Single source of truth for "where did this doc come from, and how are we
-# allowed to use it". Adding a new provider (e.g. ovh, hetzner) is one entry
-# here plus one line in taxonomy.yml -> source_orgs. No if/elif edits needed.
+# allowed to use it". Adding a new provider is one entry here plus one line in
+# taxonomy.yml -> source_orgs. No if/elif edits needed.
 #
 # Fields:
 #   aliases : substrings (lowercased) used to detect the org from source/url/title.
@@ -136,16 +136,17 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         'role': 'competitor_reference', 'reuse': 'rewrite_required',
         'adaptation': 'reference_only', 'rewrite': 'needs_rewrite', 'reference': True, 'strip_brand': True,
     },
-    'ovh': {
-        'aliases': ['ovhcloud', 'ovh'],
-        # OVH/Hetzner are infrastructure suppliers VAS builds on, not SME-hosting
-        # competitors. Flip 'role' to 'competitor_reference' if you'd rather treat
-        # them that way; the safety guarantees below are identical either way.
+    # Infrastructure/cloud suppliers VAS builds on (not SME-hosting competitors) are
+    # likewise referenced by generic, anonymised slugs. The infrastructure_reference
+    # role keeps them distinct from the hosting competitors above. Assign at import
+    # time via the label|path field; no brand aliases are auto-detected from content.
+    'infrastructure_provider_1': {
+        'aliases': ['infrastructure_provider_1'],
         'role': 'infrastructure_reference', 'reuse': 'rewrite_required',
         'adaptation': 'reference_only', 'rewrite': 'needs_rewrite', 'reference': True,
     },
-    'hetzner': {
-        'aliases': ['hetzner', 'hertzner'],  # second alias catches the common misspelling
+    'infrastructure_provider_2': {
+        'aliases': ['infrastructure_provider_2'],
         'role': 'infrastructure_reference', 'reuse': 'rewrite_required',
         'adaptation': 'reference_only', 'rewrite': 'needs_rewrite', 'reference': True,
     },
@@ -213,9 +214,9 @@ def brand_tokens() -> List[str]:
 
 def infer_source_org(doc: SourceDoc) -> str:
     # The import label is authoritative: if a doc was imported as 'authentik' or
-    # 'hetzner', trust that over content sniffing (this is the whole point of the
-    # label|path system, and avoids a doc that merely *mentions* Proxmox being
-    # mis-attributed away from its real source).
+    # 'infrastructure_provider_1', trust that over content sniffing (this is the whole
+    # point of the label|path system, and avoids a doc that merely *mentions* Proxmox
+    # being mis-attributed away from its real source).
     label = (doc.source or '').strip().lower()
     if label in SOURCE_REGISTRY:
         return label
@@ -223,7 +224,7 @@ def infer_source_org(doc: SourceDoc) -> str:
     for org in _REGISTRY_ORDER:
         for alias in SOURCE_REGISTRY[org]['aliases']:
             # Short aliases must match as whole words to avoid false positives
-            # (e.g. 'vas' inside 'canvas', 'ovh' inside a hash).
+            # (e.g. 'vas' inside 'canvas', or a short slug inside a longer token).
             if len(alias) < 4:
                 if re.search(rf'\b{re.escape(alias)}\b', hay):
                     return org

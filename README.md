@@ -124,7 +124,7 @@ add tag = community-candidate
 or:
 
 ```text
-source_org = ovh
+source_org = infrastructure_provider_1
 service = business_email
 set adaptation_action = rewrite_into_sop
 ```
