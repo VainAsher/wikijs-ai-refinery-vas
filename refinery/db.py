@@ -32,6 +32,12 @@ CREATE INDEX IF NOT EXISTS idx_docs_review_status ON docs(review_status);
 CREATE INDEX IF NOT EXISTS idx_docs_source ON docs(source);
 CREATE INDEX IF NOT EXISTS idx_docs_title ON docs(title);
 CREATE INDEX IF NOT EXISTS idx_docs_updated ON docs(updated_at);
+CREATE TABLE IF NOT EXISTS runs (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL,source_doc_id INTEGER,new_doc_id INTEGER,
+ target_action TEXT,model TEXT,dials_json TEXT NOT NULL DEFAULT '{}',brand_score INTEGER NOT NULL DEFAULT -1,
+ latency_ms INTEGER NOT NULL DEFAULT 0,used_model INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_runs_created ON runs(created_at);
 '''
 
 
@@ -137,6 +143,31 @@ class Store:
             for value in values:
                 out[f'{field}:{value}']=grouped.get(value,0)
         return out
+    def add_run(self, *, source_doc_id: int, new_doc_id: int, target_action: str, model: str,
+                dials: Dict[str, Any], brand_score: int, latency_ms: int) -> int:
+        """Record one transform run for the history/monitoring views."""
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        with self._lock:
+            cur = self.conn.execute(
+                'INSERT INTO runs (created_at,source_doc_id,new_doc_id,target_action,model,dials_json,brand_score,latency_ms,used_model) '
+                'VALUES (?,?,?,?,?,?,?,?,?)',
+                (now, source_doc_id, new_doc_id, target_action, model or '',
+                 json.dumps(dials, ensure_ascii=False), int(brand_score), int(latency_ms), 1 if model else 0))
+            self.conn.commit(); return int(cur.lastrowid)
+
+    def list_runs(self, limit: int = 50) -> List[sqlite3.Row]:
+        return list(self.conn.execute('SELECT * FROM runs ORDER BY id DESC LIMIT ?', (limit,)))
+
+    def run_summary(self) -> Dict[str, Any]:
+        """Aggregate stats for the monitoring dashboard: throughput, latency, brand."""
+        row = self.conn.execute(
+            'SELECT COUNT(*) n, AVG(latency_ms) lat, AVG(CASE WHEN brand_score>=0 THEN brand_score END) brand, '
+            'SUM(used_model) modelled FROM runs').fetchone()
+        n = int(row['n'] or 0)
+        return {'count': n, 'avg_latency_ms': int(row['lat'] or 0),
+                'avg_brand_score': round(row['brand'], 1) if row['brand'] is not None else None,
+                'with_model': int(row['modelled'] or 0)}
+
     def breakdown(self, field: str, limit: int = 30) -> List[Tuple[str, int]]:
         """Counts grouped by one indexed field, biggest first — used by the monitoring
         dashboard. Whitelisted to indexed columns to keep the f-string injection-safe."""

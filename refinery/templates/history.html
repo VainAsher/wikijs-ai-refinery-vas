@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h2>Transform history</h2>
+    <p class="muted">Every AI transform run: target, model, tuning dials, brand-compliance score, and latency. Use it to compare models and settings before bulk work.</p>
+  </div>
+  <a class="button secondary" href="/monitor">Back to monitor</a>
+</div>
+
+{% if summary.count %}
+<div class="four">
+  <div class="stat"><span class="n">{{ summary.count }}</span><span class="l">transforms</span></div>
+  <div class="stat"><span class="n">{{ (summary.avg_latency_ms/1000)|round(1) }}s</span><span class="l">avg latency</span></div>
+  <div class="stat"><span class="n">{% if summary.avg_brand_score is not none %}{{ summary.avg_brand_score }}{% else %}—{% endif %}</span><span class="l">avg brand score</span></div>
+  <div class="stat"><span class="n">{{ summary.with_model }}</span><span class="l">used a model</span></div>
+</div>
+{% endif %}
+
+<div class="card">
+{% if runs %}
+<div class="table-wrap"><table class="responsive">
+  <thead><tr><th>When</th><th>Source → Draft</th><th>Target</th><th>Model</th><th>Dials</th><th>Brand</th><th>Latency</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+  <tr>
+    <td data-label="When"><span class="muted small">{{ r.created_at[:19].replace('T',' ') }}</span></td>
+    <td data-label="Source → Draft">{% if r.source_doc_id %}<a href="/docs/{{ r.source_doc_id }}">#{{ r.source_doc_id }}</a>{% else %}—{% endif %} → {% if r.new_doc_id %}<a href="/docs/{{ r.new_doc_id }}">#{{ r.new_doc_id }}</a>{% else %}—{% endif %}</td>
+    <td data-label="Target"><span class="muted small">{{ r.target_action }}</span></td>
+    <td data-label="Model">{% if r.model %}<code>{{ r.model }}</code>{% else %}<span class="pill warn">template</span>{% endif %}</td>
+    <td data-label="Dials"><span class="muted small">{{ r.dials_json }}</span></td>
+    <td data-label="Brand">{% if r.brand_score >= 0 %}<span class="pill {% if r.brand_score>=80 %}ok{% elif r.brand_score>=60 %}warn{% else %}danger{% endif %}">{{ r.brand_score }}</span>{% else %}—{% endif %}</td>
+    <td data-label="Latency"><span class="muted small">{{ (r.latency_ms/1000)|round(1) }}s</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty"><h3>No transforms yet</h3><p>Open a reference doc and generate a VAS draft — runs will appear here.</p></div>
+{% endif %}
+</div>
+{% endblock %}

@@ -400,11 +400,14 @@ def transform_doc(doc_id:int,target_action:str=Form('rewrite_into_sop'),ollama_m
     context_text=read_context_packs(context_pack, extra_context)
     dials=normalise_dials({'tone':tone,'audience':audience,'length_bias':length_bias,'citation_strictness':citation_strictness,'reading_grade':reading_grade,'emoji_policy':emoji_policy,'include_cta':include_cta if include_cta is not None else True})
     model=ollama_model or SETTINGS.get('ollama_model') or None
+    _t0=time.time()
     draft=transform_to_vas(source,c,target_action,model,SETTINGS.get('ollama_url'),context_text=context_text,dials=dials)
+    _latency_ms=int((time.time()-_t0)*1000)
     dc=deterministic_classify(draft,TAXONOMY); dc.source_org='vainasherstudios'; dc.source_role='owned'; dc.reuse_policy='owned_original'; dc.adaptation_action=target_action; dc.rewrite_status='draft_generated'; dc.review_status='needs_review'; dc.authority='draft'; dc.canonical=False; dc.customer_safe=False; dc.transform_source_doc_id=str(doc_id); dc.canonical_target=suggest_canonical_target(dc); dc.tags=sorted(set(dc.tags+['vas-transform','draft-generated']))
     bc=brand_compliance(draft.content, load_brand(BRAND_PATH), model, SETTINGS.get('ollama_url')); dc.brand_score=bc['overall_score']
     if bc['language_violations']: dc.reasons.append('Brand: avoided language found — '+', '.join(bc['language_violations']))
     new_id=STORE.add_doc(draft,dc,build_wiki_path(dc))
+    STORE.add_run(source_doc_id=doc_id,new_doc_id=new_id,target_action=target_action,model=model or '',dials=dials,brand_score=bc['overall_score'],latency_ms=_latency_ms)
     c.adaptation_action=target_action; c.rewrite_status='draft_generated'; c.canonical_target=dc.canonical_target; c.transform_notes=f'Draft created as document #{new_id} (brand {bc["overall_score"]}/100)'
     STORE.update_doc(doc_id,c,build_wiki_path(c))
     return RedirectResponse(f'/docs/{new_id}',status_code=303)
@@ -526,4 +529,10 @@ def monitor_page(request:Request):
         'counts':counts,'breakdowns':breakdowns,'ollama':oll,
         'db_path':str(DB_PATH),'db_mb':round(db_bytes/1048576,2),
         'wikijs_set':bool(SETTINGS.get('wikijs_url') and SETTINGS.get('wikijs_token')),
+        'runs_summary':STORE.run_summary(),'recent_runs':STORE.list_runs(8),
     })
+
+
+@app.get('/history',response_class=HTMLResponse)
+def history_page(request:Request):
+    return templates.TemplateResponse(request, 'history.html', {'runs':STORE.list_runs(100),'summary':STORE.run_summary()})

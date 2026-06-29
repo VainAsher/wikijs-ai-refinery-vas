@@ -5,7 +5,7 @@
     <h2>Monitor</h2>
     <p class="muted">Pipeline health at a glance: review queue, governance distribution, Ollama status, and storage.</p>
   </div>
-  <a class="button secondary" href="/config">Configuration</a>
+  <div class="actions"><a class="button secondary" href="/history">Transform history</a><a class="button secondary" href="/config">Configuration</a></div>
 </div>
 
 <div class="four">
@@ -39,6 +39,20 @@
     <h3 style="margin-top:14px">VAS-owned</h3>
     <p><span class="pill ok">vainasherstudios: {{ counts['source_org:vainasherstudios'] or 0 }}</span></p>
   </div>
+</div>
+
+<div class="card">
+  <div class="editor-title"><h3>Transform telemetry</h3><a class="button ghost" href="/history">Full history →</a></div>
+  {% if runs_summary.count %}
+  <div class="four">
+    <div class="stat"><span class="n">{{ runs_summary.count }}</span><span class="l">transforms run</span></div>
+    <div class="stat"><span class="n">{{ (runs_summary.avg_latency_ms/1000)|round(1) }}s</span><span class="l">avg latency</span></div>
+    <div class="stat"><span class="n">{% if runs_summary.avg_brand_score is not none %}{{ runs_summary.avg_brand_score }}{% else %}—{% endif %}</span><span class="l">avg brand score</span></div>
+    <div class="stat"><span class="n">{{ runs_summary.with_model }}</span><span class="l">used a model</span></div>
+  </div>
+  {% else %}
+  <p class="muted">No transforms run yet. Open a reference doc and generate a VAS draft to populate telemetry.</p>
+  {% endif %}
 </div>
 
 <div class="three">

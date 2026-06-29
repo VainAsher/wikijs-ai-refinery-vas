@@ -113,6 +113,18 @@ def test_migration_backfills_old_db(tmp_path, taxonomy):
     assert store.count_docs(service='minecraft') == 1
 
 
+def test_run_history_and_summary(store):
+    store.add_run(source_doc_id=1, new_doc_id=2, target_action='rewrite_into_sop', model='mistral:latest',
+                  dials={'tone': 'professional'}, brand_score=84, latency_ms=1200)
+    store.add_run(source_doc_id=3, new_doc_id=4, target_action='rewrite_into_runbook', model='',
+                  dials={}, brand_score=92, latency_ms=400)
+    runs = store.list_runs()
+    assert len(runs) == 2 and runs[0]['new_doc_id'] == 4   # newest first
+    s = store.run_summary()
+    assert s['count'] == 2 and s['with_model'] == 1
+    assert s['avg_brand_score'] == 88.0 and s['avg_latency_ms'] == 800
+
+
 def test_import_key_none_without_source_id():
     assert import_key_for(SourceDoc(title='t', content='c', source='s', source_id='')) is None
     assert import_key_for(SourceDoc(title='t', content='c', source='s', source_id='x')) is not None
