@@ -33,14 +33,14 @@ def test_missing_doc_404(client):
 def test_bulk_import_then_filter(client, tmp_path):
     src = tmp_path / 'raw'
     src.mkdir()
-    (src / 'a.md').write_text('# Minecraft Restart\nBisectHosting panel, spigot plugins.', encoding='utf-8')
+    (src / 'a.md').write_text('# Minecraft Restart\nGame server panel, spigot plugins.', encoding='utf-8')
     r = client.post('/bulk/import-source-dirs',
-                    data={'source_dirs': f'bisect|{src}', 'limit': '0', 'ollama_model': ''},
+                    data={'source_dirs': f'employer_hosting|{src}', 'limit': '0', 'ollama_model': ''},
                     follow_redirects=False)
     assert r.status_code == 303
     _wait_for_jobs(client)
     # the imported doc should now be filterable by its governed source_org
-    listing = client.get('/?source_org=bisecthosting&page_size=100')
+    listing = client.get('/?source_org=employer_hosting&page_size=100')
     assert listing.status_code == 200
     assert 'Minecraft Restart' in listing.text
 
@@ -51,7 +51,7 @@ def test_import_reports_progress_job(client, tmp_path):
     for i in range(3):
         (src / f'd{i}.md').write_text(f'# Doc {i}\nhosting content', encoding='utf-8')
     r = client.post('/bulk/import-source-dirs',
-                    data={'source_dirs': f'apex|{src}', 'limit': '0'}, follow_redirects=False)
+                    data={'source_dirs': f'competitor_hosting_1|{src}', 'limit': '0'}, follow_redirects=False)
     assert r.status_code == 303
     jobs = _wait_for_jobs(client)
     done = [j for j in jobs if j['kind'] == 'import' and j['status'] == 'done']

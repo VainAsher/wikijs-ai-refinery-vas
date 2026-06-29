@@ -45,10 +45,12 @@ http://127.0.0.1:8000
 Go to **Bulk Workbench** and paste one source directory per line:
 
 ```text
-bisecthosting|C:\docs\raw\bisect
-apexhosting|C:\docs\raw\apex
-pebblehosting|C:\docs\raw\pebble
+employer_hosting|C:\docs\raw\employer
+competitor_hosting_1|C:\docs\raw\competitor_a
+competitor_hosting_2|C:\docs\raw\competitor_b
 ```
+
+Source labels are generic governance categories, not company names. Use `employer_hosting` for documentation from a hosting employer you reference, and `competitor_hosting_1` / `competitor_hosting_2` for competing providers — assign whichever category fits at import time.
 
 Use `0` as the limit to import all files.
 
@@ -61,7 +63,7 @@ Imported third-party/reference content is intentionally not trusted as canonical
 Examples:
 
 ```yaml
-source_org: bisecthosting
+source_org: employer_hosting
 source_role: employer_reference
 reuse_policy: rewrite_required
 canonical: false
@@ -69,7 +71,7 @@ rewrite_status: needs_rewrite
 ```
 
 ```yaml
-source_org: apexhosting
+source_org: competitor_hosting_1
 source_role: competitor_reference
 reuse_policy: rewrite_required
 canonical: false
@@ -113,7 +115,7 @@ After importing, use the filters on `/` to narrow documents by:
 Use `/bulk` to apply bulk actions to a filtered slice, such as:
 
 ```text
-source_org = apexhosting
+source_org = competitor_hosting_1
 service = minecraft
 set adaptation_action = rewrite_into_moderation_playbook
 add tag = community-candidate

@@ -10,8 +10,8 @@ DEFAULT_TAXONOMY = {
  'risk_levels':['low','medium','high','critical'],
  'review_statuses':['needs_review','reviewed','rejected'],
  'services':['website_hosting','website_development','managed_it','business_email','ai_workflows','automation','wordpress','nextcloud','invoice_ninja','mailcow','authentik','traefik','cloudflare','proxmox','backup','monitoring','billing','pterodactyl','minecraft','project_zomboid','rust','discord','twitch','youtube','linkedin','canvas','gaming_community_management','moderator_training','admin_training','game_server_hosting','unknown'],
- 'domains':['vain_asher_studios','client','community','personal','household','wedding','bisect','game_dev','managed_it','web_hosting','web_development','ai_workflows','gaming_community_ops','moderator_training','content_creation','game_server_hosting','unknown'],
- 'source_orgs':['vainasherstudios','bisecthosting','apexhosting','pebblehosting','ovh','hetzner','authentik','pterodactyl','rust','canvas','traefik','mailcow','nextcloud','proxmox','cloudflare','invoice_ninja','wikijs','zammad','vaultwarden','paperless','forgejo','documenso','coolify','n8n','client','internal','community_reference','unknown'],
+ 'domains':['vain_asher_studios','client','community','personal','household','wedding','employer_hosting','game_dev','managed_it','web_hosting','web_development','ai_workflows','gaming_community_ops','moderator_training','content_creation','game_server_hosting','unknown'],
+ 'source_orgs':['vainasherstudios','employer_hosting','competitor_hosting_1','competitor_hosting_2','ovh','hetzner','authentik','pterodactyl','rust','canvas','traefik','mailcow','nextcloud','proxmox','cloudflare','invoice_ninja','wikijs','zammad','vaultwarden','paperless','forgejo','documenso','coolify','n8n','client','internal','community_reference','unknown'],
  'source_roles':['canonical','owned','reference_only','evidence','imported_source','competitor_reference','employer_reference','infrastructure_reference','vendor_documentation','community_reference','training_reference','unknown'],
  'reuse_policies':['owned_original','rewrite_required','reference_only','quote_prohibited','review_required','forbidden','owned_training_material','unknown'],
  'adaptation_actions':['none','reference_only','rewrite_into_sop','rewrite_into_runbook','rewrite_into_customer_guide','rewrite_into_support_template','rewrite_into_policy','rewrite_into_training','rewrite_into_moderation_playbook','rewrite_into_admin_guide','rewrite_into_lesson_plan','rewrite_into_youtube_script','rewrite_into_linkedin_post','rewrite_into_twitch_outline','rewrite_into_discord_staff_guide','rewrite_into_community_announcement','gap_analysis_only','reject_archive'],
@@ -116,18 +116,23 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         'role': 'owned', 'reuse': 'owned_original',
         'adaptation': 'none', 'rewrite': 'not_required', 'reference': False,
     },
-    'bisecthosting': {
-        'aliases': ['bisecthosting', 'bisect'],
+    # Hosting providers are referenced by generic, anonymised category slugs rather
+    # than real brand names. The role still encodes the relationship (the employer we
+    # worked for vs. competing SME hosts), which is what governance keys off. Assign
+    # the right slug at import time via the label|path field — there are no brand
+    # aliases to auto-detect from content, by design.
+    'employer_hosting': {
+        'aliases': ['employer_hosting'],
         'role': 'employer_reference', 'reuse': 'rewrite_required',
         'adaptation': 'reference_only', 'rewrite': 'needs_rewrite', 'reference': True, 'strip_brand': True,
     },
-    'apexhosting': {
-        'aliases': ['apexhosting', 'apex'],
+    'competitor_hosting_1': {
+        'aliases': ['competitor_hosting_1'],
         'role': 'competitor_reference', 'reuse': 'rewrite_required',
         'adaptation': 'reference_only', 'rewrite': 'needs_rewrite', 'reference': True, 'strip_brand': True,
     },
-    'pebblehosting': {
-        'aliases': ['pebblehosting', 'pebble'],
+    'competitor_hosting_2': {
+        'aliases': ['competitor_hosting_2'],
         'role': 'competitor_reference', 'reuse': 'rewrite_required',
         'adaptation': 'reference_only', 'rewrite': 'needs_rewrite', 'reference': True, 'strip_brand': True,
     },
@@ -196,15 +201,15 @@ def reference_source_orgs() -> List[str]:
     return [k for k, v in SOURCE_REGISTRY.items() if v.get('reference')]
 
 def brand_tokens() -> List[str]:
-    """Brand strings stripped from text before service keyword scoring, so a provider
-    name like 'BisectHosting' can't trigger the 'hosting' service. Only entries flagged
-    strip_brand contribute — tool names like 'authentik' or 'pterodactyl' must stay in,
-    since they're exactly what we want to match on."""
+    """Host-provider label strings stripped from text before service keyword scoring,
+    so a hosting org's own slug can't by itself trigger the 'hosting' service. Only
+    entries flagged strip_brand contribute — tool names like 'authentik' or
+    'pterodactyl' must stay in, since they're exactly what we want to match on."""
     toks = set()
     for v in SOURCE_REGISTRY.values():
         if v.get('strip_brand'):
             toks.update(v['aliases'])
-    return sorted(toks, key=lambda s: -len(s))  # longest-first so 'bisecthosting' goes before 'bisect'
+    return sorted(toks, key=lambda s: -len(s))  # longest-first for stable, greedy stripping
 
 def infer_source_org(doc: SourceDoc) -> str:
     # The import label is authoritative: if a doc was imported as 'authentik' or
@@ -241,8 +246,8 @@ def deterministic_classify(doc: SourceDoc, taxonomy: Dict[str,List[str]]) -> Cla
     text=f"{doc.title}\n{doc.content[:10000]}".lower()
     c=Classification(title=doc.title or 'Untitled', description=f'Imported from {doc.source}', source=doc.source, source_id=doc.source_id, source_url=doc.source_url, original_updated_at=doc.original_updated_at, tags=[f'{doc.source}-import','needs-review'], confidence=.35, reasons=['Baseline deterministic classification applied.'])
     c.source_org=infer_source_org(doc); source_governance(c)
-    # Strip the resolved provider's brand from the text before service scoring, so a
-    # provider name like "BisectHosting" can't trip the website_hosting keyword 'hosting'
+    # Strip the resolved provider's label from the text before service scoring, so a
+    # hosting org's slug can't by itself trip the website_hosting keyword 'hosting'
     # (the bug that pinned most imported docs to website_hosting).
     svc_text=text
     for tok in brand_tokens(): svc_text=svc_text.replace(tok,' ')

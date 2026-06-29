@@ -97,7 +97,7 @@ domains:
   - personal
   - household
   - wedding
-  - bisect
+  - employer_hosting
   - game_dev
   - managed_it
   - web_hosting
@@ -110,9 +110,11 @@ domains:
   - unknown
 source_orgs:
   - vainasherstudios
-  - bisecthosting
-  - apexhosting
-  - pebblehosting
+  # Hosting providers anonymised to generic category slugs (role still distinguishes
+  # employer vs. competitor). Assign these at import time via the label|path field.
+  - employer_hosting
+  - competitor_hosting_1
+  - competitor_hosting_2
   - ovh
   - hetzner
   # Managed-service documentation sources (tools VAS operates/maintains)

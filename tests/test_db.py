@@ -3,7 +3,7 @@ from refinery.core import SourceDoc, Classification, deterministic_classify, bui
 from refinery.db import Store, import_key_for, DocNotFound, DENORM_FIELDS
 
 
-def _doc(title='Doc', content='minecraft spigot', source='bisect', sid='1'):
+def _doc(title='Doc', content='minecraft spigot', source='employer_hosting', sid='1'):
     return SourceDoc(title=title, content=content, source=source, source_id=sid)
 
 
@@ -50,9 +50,9 @@ def test_reimport_updates_needs_review_not_reviewed(store, taxonomy):
 
 
 def test_indexed_filters(store, taxonomy):
-    _add(store, taxonomy, source='bisect', content='minecraft spigot', sid='a')
+    _add(store, taxonomy, source='employer_hosting', content='minecraft spigot', sid='a')
     _add(store, taxonomy, source='authentik', content='saml oidc', sid='b')
-    assert store.count_docs(source_org='bisecthosting') == 1
+    assert store.count_docs(source_org='employer_hosting') == 1
     assert store.count_docs(source_org='authentik') == 1
     assert store.count_docs(service='authentik') == 1
     assert store.count_docs(source_org='nonexistent') == 0
@@ -66,10 +66,10 @@ def test_wildcard_escaping(store, taxonomy):
 
 
 def test_breakdown_groups(store, taxonomy):
-    _add(store, taxonomy, source='bisect', content='minecraft', sid='a')
-    _add(store, taxonomy, source='apex', content='minecraft', sid='b')
+    _add(store, taxonomy, source='employer_hosting', content='minecraft', sid='a')
+    _add(store, taxonomy, source='competitor_hosting_1', content='minecraft', sid='b')
     bd = dict(store.breakdown('source_org'))
-    assert bd.get('bisecthosting') == 1 and bd.get('apexhosting') == 1
+    assert bd.get('employer_hosting') == 1 and bd.get('competitor_hosting_1') == 1
 
 
 def test_breakdown_rejects_bad_field(store):
@@ -81,10 +81,10 @@ def test_breakdown_rejects_bad_field(store):
 
 
 def test_counts_use_indexed_columns(store, taxonomy):
-    _add(store, taxonomy, source='apex', content='minecraft', sid='a')
+    _add(store, taxonomy, source='competitor_hosting_1', content='minecraft', sid='a')
     counts = store.counts()
     assert counts['total'] == 1
-    assert counts['source_org:apexhosting'] == 1
+    assert counts['source_org:competitor_hosting_1'] == 1
     assert counts['rewrite_status:needs_rewrite'] == 1
 
 
@@ -97,11 +97,11 @@ def test_migration_backfills_old_db(tmp_path, taxonomy):
         source_url TEXT,original_updated_at TEXT,content TEXT NOT NULL,raw_metadata_json TEXT NOT NULL DEFAULT '{}',
         classification_json TEXT NOT NULL,review_status TEXT NOT NULL DEFAULT 'needs_review',wiki_path TEXT,
         published INTEGER NOT NULL DEFAULT 0,publish_message TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)''')
-    c = Classification(title='Legacy', description='', source='apex')
-    c.source_org = 'apexhosting'; c.service = 'minecraft'; c.doc_type = 'runbook'
+    c = Classification(title='Legacy', description='', source='competitor_hosting_1')
+    c.source_org = 'competitor_hosting_1'; c.service = 'minecraft'; c.doc_type = 'runbook'
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     conn.execute('INSERT INTO docs (title,source,content,classification_json,review_status,wiki_path,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
-                 ('Legacy', 'apex', 'x', json.dumps({**c.__dict__}), 'needs_review', 'imports/apexhosting/legacy', now, now))
+                 ('Legacy', 'competitor_hosting_1', 'x', json.dumps({**c.__dict__}), 'needs_review', 'imports/competitor_hosting_1/legacy', now, now))
     conn.commit(); conn.close()
 
     # Opening with the new Store must add + backfill the denorm columns transparently.
@@ -109,7 +109,7 @@ def test_migration_backfills_old_db(tmp_path, taxonomy):
     cols = {r[1] for r in store.conn.execute('PRAGMA table_info(docs)')}
     for f in DENORM_FIELDS:
         assert f in cols
-    assert store.count_docs(source_org='apexhosting') == 1
+    assert store.count_docs(source_org='competitor_hosting_1') == 1
     assert store.count_docs(service='minecraft') == 1
 
 

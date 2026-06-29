@@ -48,13 +48,16 @@ def test_infer_source_org_short_alias_word_boundary():
     assert infer_source_org(d) != 'vainasherstudios'
 
 
-def test_brand_stripping_keeps_minecraft_not_hosting(taxonomy):
-    # The documented bug: 'BisectHosting' should not pin the doc to website_hosting.
+def test_host_label_classifies_and_governs(taxonomy):
+    # Importing under a generic host label is authoritative; the service is still
+    # inferred from content (not pinned to website_hosting), and reference governance
+    # (non-canonical, rewrite-required) is applied for the employer_reference role.
     d = SourceDoc(title='How to Restart Your Minecraft Server',
-                  content='BisectHosting panel. Check modpack and spigot plugins.',
-                  source='bisect', source_id='m1')
+                  content='Game server panel. Check modpack and spigot plugins.',
+                  source='employer_hosting', source_id='m1')
     c = deterministic_classify(d, taxonomy)
-    assert c.source_org == 'bisecthosting'
+    assert c.source_org == 'employer_hosting'
+    assert c.source_role == 'employer_reference'
     assert c.service == 'minecraft'
     assert c.canonical is False
     assert c.reuse_policy == 'rewrite_required'
@@ -69,8 +72,8 @@ def test_vendor_doc_service_from_label(taxonomy):
 
 
 def test_governance_reference_forces_non_canonical():
-    c = Classification(title='t', description='', source='apex')
-    c.source_org = 'apexhosting'
+    c = Classification(title='t', description='', source='competitor_hosting_1')
+    c.source_org = 'competitor_hosting_1'
     c.canonical = True
     c.authority = 'canonical'
     source_governance(c)
@@ -87,16 +90,16 @@ def test_unknown_org_requires_review():
 
 
 def test_build_wiki_path_import_vs_transform():
-    c = Classification(title='My Doc', description='', source='apex')
-    c.source_org = 'apexhosting'
-    assert build_wiki_path(c) == 'imports/apexhosting/my-doc'
+    c = Classification(title='My Doc', description='', source='competitor_hosting_1')
+    c.source_org = 'competitor_hosting_1'
+    assert build_wiki_path(c) == 'imports/competitor_hosting_1/my-doc'
     t = Classification(title='Draft', description='', source='vainasherstudios_transform')
     t.canonical_target = 'sops/minecraft/my-draft'
     assert build_wiki_path(t) == 'sops/minecraft/my-draft'
 
 
 def test_merge_ai_validates_and_reasserts_governance(taxonomy):
-    base = deterministic_classify(SourceDoc(title='x', content='hosting', source='apex', source_id='1'), taxonomy)
+    base = deterministic_classify(SourceDoc(title='x', content='hosting', source='competitor_hosting_1', source_id='1'), taxonomy)
     # AI tries to set an invalid doc_type and mark a competitor doc canonical
     ai = {'doc_type': 'not_a_real_type', 'service': 'minecraft', 'canonical': True, 'authority': 'canonical'}
     merged = merge_ai_classification(base, ai, taxonomy)
@@ -106,9 +109,9 @@ def test_merge_ai_validates_and_reasserts_governance(taxonomy):
 
 
 def test_transform_fallback_without_model():
-    d = SourceDoc(title='Ban Appeals', content='moderator reviews report', source='apex', source_id='1')
-    c = Classification(title='Ban Appeals', description='', source='apex')
-    c.source_org = 'apexhosting'
+    d = SourceDoc(title='Ban Appeals', content='moderator reviews report', source='competitor_hosting_1', source_id='1')
+    c = Classification(title='Ban Appeals', description='', source='competitor_hosting_1')
+    c.source_org = 'competitor_hosting_1'
     out = transform_to_vas(d, c, 'rewrite_into_moderation_playbook', model=None)
     assert out.source == 'vainasherstudios_transform'
     assert 'Draft generated for human review' in out.content   # deterministic fallback path
@@ -123,5 +126,5 @@ def test_ollama_base_url():
 
 def test_reference_orgs_exclude_owned():
     refs = reference_source_orgs()
-    assert 'apexhosting' in refs
+    assert 'competitor_hosting_1' in refs
     assert 'vainasherstudios' not in refs
