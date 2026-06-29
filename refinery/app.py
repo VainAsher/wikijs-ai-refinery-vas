@@ -10,6 +10,7 @@ from refinery.connectors import CONNECTORS
 from refinery.core import DIAL_OPTIONS, DIALS_DEFAULTS, SourceDoc, apply_redactions, brand_compliance, build_wiki_path, clean_markdown, derive_content_gaps, deterministic_classify, discover_ollama_url, enriched_markdown, extract_facts, load_brand, load_taxonomy, merge_ai_classification, normalise_dials, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_vas
 from refinery.db import Store, import_key_for, DocNotFound
 from refinery.jobs import JOBS
+from refinery.refine import CLAUDE_MODELS, DEFAULT_CLAUDE_MODEL, claude_available, estimate_tokens, refine_with_claude
 from refinery.settings import Settings
 
 BASE=Path(__file__).resolve().parent
@@ -351,7 +352,23 @@ def edit_alias(doc_id:int):
 @app.get('/docs/{doc_id}',response_class=HTMLResponse)
 def review_doc(request:Request,doc_id:int,notice:Optional[str]=None):
     row=STORE.get_doc(doc_id); c=STORE.classification(row)
-    return templates.TemplateResponse(request, 'review.html', {'row':row,'c':c,'taxonomy':TAXONOMY,'wiki_path':build_wiki_path(c),'content':row['content'],'context_packs':list_context_packs(),'findings':scrub_findings(row['content']),'notice':notice,'dial_options':DIAL_OPTIONS,'dial_defaults':DIALS_DEFAULTS})
+    claude={'available':claude_available(),'configured':bool(SETTINGS.get('anthropic_api_key')),'models':CLAUDE_MODELS,'default':DEFAULT_CLAUDE_MODEL,'est_tokens':estimate_tokens(row['content'])}
+    return templates.TemplateResponse(request, 'review.html', {'row':row,'c':c,'taxonomy':TAXONOMY,'wiki_path':build_wiki_path(c),'content':row['content'],'context_packs':list_context_packs(),'findings':scrub_findings(row['content']),'notice':notice,'dial_options':DIAL_OPTIONS,'dial_defaults':DIALS_DEFAULTS,'claude':claude})
+
+
+@app.post('/docs/{doc_id}/refine')
+def refine_doc(doc_id:int,claude_model:str=Form(DEFAULT_CLAUDE_MODEL),instructions:str=Form('')):
+    """Optional cloud reroll: refine the current content with a Claude model, replace
+    it on success, and report the actual token usage + cost."""
+    row=STORE.get_doc(doc_id); c=STORE.classification(row)
+    ok,result,meta=refine_with_claude(row['content'],instructions,claude_model,SETTINGS.get('anthropic_api_key'))
+    if not ok:
+        return RedirectResponse(f'/docs/{doc_id}?notice={("Refine: "+result).replace(" ","+")}',status_code=303)
+    bc=brand_compliance(result, load_brand(BRAND_PATH), SETTINGS.get('ollama_model') or None, SETTINGS.get('ollama_url')); c.brand_score=bc['overall_score']
+    if 'claude-refined' not in c.tags: c.tags.append('claude-refined')
+    STORE.update_doc(doc_id,c,build_wiki_path(c),content=result)
+    msg=f'Refined with {meta["model"]}: {meta["input_tokens"]}+{meta["output_tokens"]} tokens, ~${meta["cost"]:.4f}'
+    return RedirectResponse(f'/docs/{doc_id}?notice={msg.replace(" ","+")}',status_code=303)
 
 
 @app.post('/docs/{doc_id}/redact')
@@ -527,8 +544,8 @@ def config_page(request:Request, notice:Optional[str]=None):
 
 
 @app.post('/config/save')
-def config_save(ollama_url:str=Form(''),ollama_model:str=Form(''),wikijs_url:str=Form(''),wikijs_token:str=Form('')):
-    SETTINGS.save({'ollama_url':ollama_url,'ollama_model':ollama_model,'wikijs_url':wikijs_url,'wikijs_token':wikijs_token})
+def config_save(ollama_url:str=Form(''),ollama_model:str=Form(''),wikijs_url:str=Form(''),wikijs_token:str=Form(''),anthropic_api_key:str=Form('')):
+    SETTINGS.save({'ollama_url':ollama_url,'ollama_model':ollama_model,'wikijs_url':wikijs_url,'wikijs_token':wikijs_token,'anthropic_api_key':anthropic_api_key})
     return RedirectResponse('/config?notice=Settings+saved',status_code=303)
 
 

@@ -153,6 +153,28 @@
   </div>
 </details>
 
+<!-- Optional cloud reroll: refine the current content with a Claude model -->
+<details class="section">
+  <summary>Refine with Claude <span class="sub">— optional cloud reroll (costs API credits)</span></summary>
+  <div class="body">
+    {% if not claude.available %}
+    <p class="muted small">The <code>anthropic</code> SDK isn't installed. Run <code>pip install anthropic</code> to enable cloud refinement.</p>
+    {% elif not claude.configured %}
+    <p class="muted small">No Anthropic API key configured. Add one on the <a href="/config">Config</a> page to enable cloud refinement.</p>
+    {% else %}
+    <p class="muted small">Polishes the current content with a more capable model than local Ollama, replacing it on success. The document is ~{{ claude.est_tokens }} input tokens; cost depends on the model and the length of the rewrite (actual usage is reported after).</p>
+    <form method="post" action="/docs/{{ row.id }}/refine">
+      <div class="row">
+        <div><label>Model</label><select name="claude_model">{% for id,m in claude.models.items() %}<option value="{{id}}" {% if id==claude.default %}selected{% endif %}>{{ m.label }} (${{ m['in'] }}/${{ m['out'] }} per M tok)</option>{% endfor %}</select></div>
+        <div style="flex:none"><label>&nbsp;</label><button class="secondary" data-tip="Sends the current content to the Claude API and replaces it with the improved version.">Refine with Claude</button></div>
+      </div>
+      <label>Instructions <span class="muted small">optional</span></label>
+      <textarea name="instructions" style="min-height:80px" placeholder="e.g. tighten the intro, add a troubleshooting section, make it friendlier for SME clients."></textarea>
+    </form>
+    {% endif %}
+  </div>
+</details>
+
 <details class="section">
   <summary>Why it was classified this way <span class="sub">— classifier reasoning</span></summary>
   <div class="body"><pre>{{ c.reasons|join('\n') }}</pre></div>

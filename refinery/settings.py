@@ -46,15 +46,17 @@ DEFAULTS: Dict[str, str] = {
     'ollama_model': '',
     'wikijs_url':   '',
     'wikijs_token': '',
+    'anthropic_api_key': '',
 }
 ENV_MAP: Dict[str, str] = {
     'ollama_url':   'OLLAMA_URL',
     'ollama_model': 'OLLAMA_MODEL',
     'wikijs_url':   'WIKIJS_URL',
     'wikijs_token': 'WIKIJS_TOKEN',
+    'anthropic_api_key': 'ANTHROPIC_API_KEY',
 }
-# Fields never echoed back to the browser in clear text.
-SECRET_KEYS = {'wikijs_token'}
+# Fields never echoed back to the browser in clear text (and encrypted at rest).
+SECRET_KEYS = {'wikijs_token', 'anthropic_api_key'}
 
 
 class Settings:

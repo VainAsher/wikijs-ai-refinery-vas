@@ -36,6 +36,9 @@
       <label>Wiki.js token <span class="muted small">({{ settings.wikijs_token.source }}{% if settings.wikijs_token.set %} — currently set{% endif %})</span></label>
       <input name="wikijs_token" type="password" placeholder="{% if settings.wikijs_token.set %}leave blank to keep existing{% else %}paste token{% endif %}">
 
+      <label>Anthropic API key <span class="help" tabindex="0" data-tip="Enables optional 'Refine with Claude' cloud reroll on the document editor. Encrypted at rest.">?</span> <span class="muted small">({{ settings.anthropic_api_key.source }}{% if settings.anthropic_api_key.set %} — currently set{% endif %})</span></label>
+      <input name="anthropic_api_key" type="password" placeholder="{% if settings.anthropic_api_key.set %}leave blank to keep existing{% else %}sk-ant-...{% endif %}">
+
       <div class="actions" style="margin-top:12px"><button>Save settings</button></div>
     </form>
     <p class="muted small">Token is <strong>encrypted at rest</strong> in <code>data/settings.json</code> (key in <code>data/.secret_key</code>, or set <code>REFINERY_SECRET_KEY</code>) and never shown back here. To clear a value, edit or delete that file.</p>
