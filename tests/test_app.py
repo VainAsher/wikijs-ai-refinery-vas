@@ -19,7 +19,7 @@ def _wait_for_jobs(client, timeout=10.0):
 
 
 def test_pages_load(client):
-    for path in ('/', '/bulk', '/connectors', '/context', '/monitor', '/history', '/config', '/guide'):
+    for path in ('/', '/bulk', '/connectors', '/context', '/monitor', '/history', '/gaps', '/config', '/guide'):
         r = client.get(path)
         assert r.status_code == 200, path
 

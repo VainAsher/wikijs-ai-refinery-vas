@@ -5,7 +5,24 @@ from refinery.core import (
     transform_to_vas, ollama_base_url, brand_tokens, reference_source_orgs,
     compute_confidence, interpret_confidence, scrub_findings, apply_redactions,
     normalise_dials, dials_directives, brand_compliance, brand_violations, DEFAULT_BRAND,
+    derive_content_gaps,
 )
+
+
+def test_derive_content_gaps_prioritises_rewrite_backlog():
+    coverage = [
+        {'service': 'minecraft', 'total': 5, 'owned': 0, 'reference': 5},   # rewrite backlog (priority 3)
+        {'service': 'business_email', 'total': 0, 'owned': 0, 'reference': 0},  # no coverage (2)
+        {'service': 'rust', 'total': 1, 'owned': 1, 'reference': 0},         # shallow (1)
+        {'service': 'authentik', 'total': 9, 'owned': 4, 'reference': 5},    # healthy -> no gap
+    ]
+    gaps = derive_content_gaps(coverage)
+    kinds = {g['service']: g['kind'] for g in gaps}
+    assert kinds['minecraft'] == 'rewrite_backlog'
+    assert kinds['business_email'] == 'no_coverage'
+    assert kinds['rust'] == 'shallow'
+    assert 'authentik' not in kinds              # well-covered service is not a gap
+    assert gaps[0]['service'] == 'minecraft'     # highest priority first
 
 
 def test_normalise_dials_ignores_blanks_and_invalid():

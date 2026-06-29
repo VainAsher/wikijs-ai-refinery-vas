@@ -158,6 +158,17 @@ class Store:
     def list_runs(self, limit: int = 50) -> List[sqlite3.Row]:
         return list(self.conn.execute('SELECT * FROM runs ORDER BY id DESC LIMIT ?', (limit,)))
 
+    def service_coverage(self, services: List[str]) -> List[Dict[str, Any]]:
+        """Per-service doc counts split into VAS-owned vs reference, for gap analysis."""
+        out = []
+        for s in services:
+            if s == 'unknown':
+                continue
+            total = self.count_docs(service=s)
+            owned = self.count_docs(service=s, source_org='vainasherstudios')
+            out.append({'service': s, 'total': total, 'owned': owned, 'reference': total - owned})
+        return out
+
     def run_summary(self) -> Dict[str, Any]:
         """Aggregate stats for the monitoring dashboard: throughput, latency, brand."""
         row = self.conn.execute(

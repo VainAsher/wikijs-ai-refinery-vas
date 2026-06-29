@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h2>Content gaps</h2>
+    <p class="muted">Where the knowledge base is thin or un-rewritten, so you know what to forge next. Highest-value gaps first.</p>
+  </div>
+  <a class="button secondary" href="/monitor">Back to monitor</a>
+</div>
+
+<div class="card">
+  <h3>Prioritised gaps</h3>
+  {% if gaps %}
+  <div class="table-wrap"><table class="responsive">
+    <thead><tr><th>Service</th><th>Gap type</th><th>Why</th><th></th></tr></thead>
+    <tbody>
+    {% for g in gaps %}
+    <tr>
+      <td data-label="Service"><strong>{{ g.service }}</strong></td>
+      <td data-label="Gap type"><span class="pill {% if g.kind=='rewrite_backlog' %}warn{% elif g.kind=='no_coverage' %}danger{% else %}{% endif %}">{{ g.kind.replace('_',' ') }}</span></td>
+      <td data-label="Why"><span class="muted small">{{ g.note }}</span></td>
+      <td data-label=""><a class="button ghost" href="/?service={{ g.service }}&page_size=100">View docs →</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="empty"><h3>No gaps detected</h3><p>Every service has VAS-owned coverage. Import more sources to surface new gaps.</p></div>
+  {% endif %}
+</div>
+
+<details class="section">
+  <summary>Full coverage by service <span class="sub">— owned vs reference counts</span></summary>
+  <div class="body">
+    <div class="table-wrap"><table class="responsive">
+      <thead><tr><th>Service</th><th>Total</th><th>VAS-owned</th><th>Reference</th></tr></thead>
+      <tbody>
+      {% for c in coverage %}
+      <tr>
+        <td data-label="Service"><a href="/?service={{ c.service }}&page_size=100">{{ c.service }}</a></td>
+        <td data-label="Total">{{ c.total }}</td>
+        <td data-label="VAS-owned"><span class="pill {% if c.owned %}ok{% endif %}">{{ c.owned }}</span></td>
+        <td data-label="Reference">{{ c.reference }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</details>
+{% endblock %}

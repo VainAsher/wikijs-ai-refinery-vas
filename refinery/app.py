@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 import time
 from refinery.connectors import CONNECTORS
-from refinery.core import DIAL_OPTIONS, DIALS_DEFAULTS, SourceDoc, apply_redactions, brand_compliance, build_wiki_path, clean_markdown, deterministic_classify, discover_ollama_url, enriched_markdown, load_brand, load_taxonomy, merge_ai_classification, normalise_dials, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_vas
+from refinery.core import DIAL_OPTIONS, DIALS_DEFAULTS, SourceDoc, apply_redactions, brand_compliance, build_wiki_path, clean_markdown, derive_content_gaps, deterministic_classify, discover_ollama_url, enriched_markdown, load_brand, load_taxonomy, merge_ai_classification, normalise_dials, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_vas
 from refinery.db import Store, import_key_for, DocNotFound
 from refinery.jobs import JOBS
 from refinery.settings import Settings
@@ -536,3 +536,12 @@ def monitor_page(request:Request):
 @app.get('/history',response_class=HTMLResponse)
 def history_page(request:Request):
     return templates.TemplateResponse(request, 'history.html', {'runs':STORE.list_runs(100),'summary':STORE.run_summary()})
+
+
+@app.get('/gaps',response_class=HTMLResponse)
+def gaps_page(request:Request):
+    """Content-gap analysis: which services need a VAS rewrite, fresh coverage, or
+    deepening. Each row links straight to the filtered queue to act on it."""
+    coverage=STORE.service_coverage(TAXONOMY.get('services',[]))
+    gaps=derive_content_gaps(coverage)
+    return templates.TemplateResponse(request, 'gaps.html', {'gaps':gaps,'coverage':sorted(coverage,key=lambda c:-c['total'])})

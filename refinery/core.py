@@ -590,6 +590,26 @@ def brand_compliance(text: str, brand: Dict[str, Any], model: Optional[str]=None
             'notes': 'Deterministic check (no model): score = 100 − 8×avoided-language hits.',
             'method': 'deterministic'}
 
+def derive_content_gaps(coverage: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Turn per-service coverage counts into prioritised content-gap suggestions
+    (adapted from ForgeOS's gap analyzer, simplified to what the store can answer):
+      - rewrite_backlog: reference docs exist but no VAS-owned draft (highest value)
+      - no_coverage:     a service with zero docs (worth creating)
+      - shallow:         1-2 docs only (thin)."""
+    gaps: List[Dict[str, Any]] = []
+    for c in coverage:
+        if c['owned'] == 0 and c['reference'] > 0:
+            gaps.append({'service': c['service'], 'kind': 'rewrite_backlog', 'priority': 3,
+                         'note': f"{c['reference']} reference doc(s) but no VAS-owned draft — prime rewrite candidate."})
+        elif c['total'] == 0:
+            gaps.append({'service': c['service'], 'kind': 'no_coverage', 'priority': 2,
+                         'note': 'No documents yet — candidate to create from scratch.'})
+        elif c['total'] <= 2:
+            gaps.append({'service': c['service'], 'kind': 'shallow', 'priority': 1,
+                         'note': f"Only {c['total']} doc(s) — shallow coverage, worth deepening."})
+    gaps.sort(key=lambda g: (-g['priority'], g['service']))
+    return gaps
+
 def load_brand(path) -> Dict[str, Any]:
     """Load the structured brand profile, seeding a default file on first use and
     merging it over DEFAULT_BRAND so a partial brand.yaml is always complete."""
