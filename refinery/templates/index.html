@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+{% set adv = filters.source_org or filters.service or filters.doc_type or filters.rewrite_status or filters.authority %}
+<div class="pagehead">
+  <div>
+    <h2>In-flight documents</h2>
+    <p class="muted">Filter the queue, open a doc to edit and classify it, transform reference docs into VAS drafts, then approve or publish. New here? Read the <a href="/guide">guide</a>.</p>
+  </div>
+  <div class="actions"><a class="button" href="/bulk">Bulk import</a><a class="button secondary" href="/connectors">Connectors</a></div>
+</div>
+
+<!-- Stat tiles double as one-click filters -->
+<div class="grid">
+  <a class="stat" href="/?page_size={{ page_size }}"><span class="n">{{ counts.total or 0 }}</span><span class="l">Total</span></a>
+  <a class="stat" href="/?status=needs_review&page_size={{ page_size }}"><span class="n">{{ counts.needs_review or 0 }}</span><span class="l">Needs review</span></a>
+  <a class="stat" href="/?status=reviewed&page_size={{ page_size }}"><span class="n">{{ counts.reviewed or 0 }}</span><span class="l">Reviewed</span></a>
+  <a class="stat" href="/?source_org=vainasherstudios&page_size={{ page_size }}"><span class="n">{{ counts['source_org:vainasherstudios'] or 0 }}</span><span class="l">VAS drafts</span></a>
+  <a class="stat" href="/?rewrite_status=needs_rewrite&page_size={{ page_size }}"><span class="n">{{ counts['rewrite_status:needs_rewrite'] or 0 }}</span><span class="l">Needs rewrite</span></a>
+  <a class="stat" href="/?page_size={{ page_size }}"><span class="n">{{ counts.published or 0 }}</span><span class="l">Published</span></a>
+</div>
+
+<!-- Filters: essentials always visible, the rest behind a disclosure -->
+<form class="card" method="get">
+  <div class="row">
+    <div style="flex:2"><label>Search <span class="help" tabindex="0" data-tip="Matches document titles and body text. Literal % and _ are treated as plain characters.">?</span></label><input name="q" value="{{ filters.q }}" placeholder="minecraft, email, rust, DNS..."></div>
+    <div><label>Status</label><select name="status"><option value="">Any</option>{% for s in taxonomy.review_statuses %}<option value="{{s}}" {% if filters.status==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select></div>
+    <div style="flex:none;min-width:auto"><label>&nbsp;</label><button class="btn-block">Filter</button></div>
+  </div>
+
+  <details class="section" style="margin:14px 0 0;box-shadow:none" {% if adv %}open{% endif %}>
+    <summary>Advanced filters {% if adv %}<span class="badge-soft">active</span>{% endif %}</summary>
+    <div class="body">
+      <div class="four">
+        <div><label>Source org <span class="help" tabindex="0" data-tip="Who the doc came from. Drives governance defaults (reference vs owned).">?</span></label><select name="source_org"><option value="">Any</option>{% for s in taxonomy.source_orgs %}<option value="{{s}}" {% if filters.source_org==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select></div>
+        <div><label>Service</label><select name="service"><option value="">Any</option>{% for s in taxonomy.services %}<option value="{{s}}" {% if filters.service==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select></div>
+        <div><label>Doc type</label><select name="doc_type"><option value="">Any</option>{% for s in taxonomy.doc_types %}<option value="{{s}}" {% if filters.doc_type==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select></div>
+        <div><label>Page size</label><select name="page_size">{% for n in [25,50,100,250] %}<option value="{{n}}" {% if page_size==n %}selected{% endif %}>{{n}}</option>{% endfor %}</select></div>
+      </div>
+      <div class="four">
+        <div><label>Rewrite status <span class="help" tabindex="0" data-tip="Lifecycle of a reference doc: needs_rewrite → draft_generated → in_review → approved.">?</span></label><select name="rewrite_status"><option value="">Any</option>{% for s in taxonomy.rewrite_statuses %}<option value="{{s}}" {% if filters.rewrite_status==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select></div>
+        <div><label>Authority <span class="help" tabindex="0" data-tip="Trust level: imported_unreviewed, draft, approved, canonical, archived.">?</span></label><select name="authority"><option value="">Any</option>{% for s in taxonomy.authorities %}<option value="{{s}}" {% if filters.authority==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select></div>
+        <div style="align-self:end"><a class="button secondary btn-block" href="/?page_size={{ page_size }}">Clear all</a></div>
+        <div style="align-self:end"><button class="btn-block">Apply filters</button></div>
+      </div>
+    </div>
+  </details>
+</form>
+
+<div class="pagination">
+  <span class="muted small">Page {{ page }} of {{ pages }} · {{ total }} matching docs</span>
+  <span class="actions">
+    {% if page > 1 %}<a href="/?page={{ page-1 }}&page_size={{ page_size }}&status={{ filters.status }}&source_org={{ filters.source_org }}&service={{ filters.service }}&doc_type={{ filters.doc_type }}&rewrite_status={{ filters.rewrite_status }}&authority={{ filters.authority }}&q={{ filters.q }}">‹ Previous</a>{% endif %}
+    {% if page < pages %}<a href="/?page={{ page+1 }}&page_size={{ page_size }}&status={{ filters.status }}&source_org={{ filters.source_org }}&service={{ filters.service }}&doc_type={{ filters.doc_type }}&rewrite_status={{ filters.rewrite_status }}&authority={{ filters.authority }}&q={{ filters.q }}">Next ›</a>{% endif %}
+  </span>
+</div>
+
+<div class="card">
+{% if docs %}
+<div class="table-wrap"><table class="responsive">
+  <thead><tr>
+    <th>Document</th>
+    <th>Source governance <span class="help" tabindex="0" data-tip="Where the doc came from and how you're allowed to reuse it.">?</span></th>
+    <th>Classification</th>
+    <th>Status</th>
+    <th>Target / path</th>
+    <th>Actions</th>
+  </tr></thead>
+  <tbody>
+  {% for item in docs %}
+  <tr class="clickable" data-href="/docs/{{ item.row.id }}">
+    <td data-label="Document"><a href="/docs/{{ item.row.id }}"><strong>{{ item.c.title }}</strong></a><br><span class="muted small">#{{ item.row.id }} · {{ item.row.source }}{% if item.row.source_id %} · {{ item.row.source_id }}{% endif %}</span></td>
+    <td data-label="Source governance"><span class="pill">{{ item.c.source_org }}</span><span class="pill">{{ item.c.source_role }}</span><span class="pill {% if item.c.reuse_policy in ['rewrite_required','quote_prohibited','forbidden'] %}warn{% else %}ok{% endif %}">{{ item.c.reuse_policy }}</span><br><span class="muted small">{{ item.c.adaptation_action }} · {{ item.c.rewrite_status }}</span></td>
+    <td data-label="Classification"><span class="pill">{{ item.c.doc_type }}</span><span class="pill">{{ item.c.service }}</span><span class="pill">{{ item.c.audience }}</span><span class="pill {% if item.c.risk_level in ['high','critical'] %}danger{% elif item.c.risk_level=='medium' %}warn{% else %}ok{% endif %}">{{ item.c.risk_level }}</span></td>
+    <td data-label="Status">{{ item.c.review_status }}{% if item.row.published %}<br><span class="pill ok">published</span>{% endif %}</td>
+    <td data-label="Target / path"><code>{{ item.path }}</code>{% if item.c.canonical_target %}<br><span class="muted small">target: {{ item.c.canonical_target }}</span>{% endif %}</td>
+    <td data-label="Actions"><div class="actions"><a class="button secondary" href="/docs/{{ item.row.id }}">Open</a><form method="post" action="/docs/{{ item.row.id }}/quick"><input type="hidden" name="action" value="approve"><button class="ghost">Approve</button></form></div></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty"><h3>No matching documents</h3><p>Adjust your filters, or import documents from the <a href="/bulk">Bulk Workbench</a>.</p></div>
+{% endif %}
+</div>
+{% endblock %}

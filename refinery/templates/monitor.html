@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h2>Monitor</h2>
+    <p class="muted">Pipeline health at a glance: review queue, governance distribution, Ollama status, and storage.</p>
+  </div>
+  <a class="button secondary" href="/config">Configuration</a>
+</div>
+
+<div class="four">
+  <a class="stat" href="/"><span class="n">{{ counts.total or 0 }}</span><span class="l">total docs</span></a>
+  <a class="stat" href="/?status=needs_review"><span class="n">{{ counts.needs_review or 0 }}</span><span class="l">needs review</span></a>
+  <a class="stat" href="/?status=reviewed"><span class="n">{{ counts.reviewed or 0 }}</span><span class="l">reviewed</span></a>
+  <a class="stat" href="/"><span class="n">{{ counts.published or 0 }}</span><span class="l">published</span></a>
+</div>
+
+<div class="two">
+  <div class="card">
+    <h3>System</h3>
+    <p>Ollama:
+      {% if ollama.up %}<span class="pill ok">reachable</span> {{ ollama.models|length }} models{% if ollama.loaded %}, {{ ollama.loaded|length }} loaded{% endif %}
+      {% else %}<span class="pill danger">unreachable</span>{% endif %}
+      <span class="muted small">{{ ollama.base }}</span>
+    </p>
+    <p>Wiki.js publishing: {% if wikijs_set %}<span class="pill ok">configured</span>{% else %}<span class="pill warn">not configured</span>{% endif %}</p>
+    <p>Database: <span class="pill">{{ db_mb }} MB</span> <span class="muted small">{{ db_path }}</span></p>
+    {% if ollama.up and ollama.loaded %}<p class="muted small">Loaded in memory: {% for m in ollama.loaded %}<span class="pill">{{ m }}</span>{% endfor %}</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Rewrite pipeline</h3>
+    <p class="muted small">Where reference docs are in the rewrite lifecycle.</p>
+    <p>
+      <span class="pill warn">needs rewrite: {{ counts['rewrite_status:needs_rewrite'] or 0 }}</span>
+      <span class="pill">draft generated: {{ counts['rewrite_status:draft_generated'] or 0 }}</span>
+      <span class="pill ok">approved: {{ counts['rewrite_status:approved'] or 0 }}</span>
+    </p>
+    <h3 style="margin-top:14px">VAS-owned</h3>
+    <p><span class="pill ok">vainasherstudios: {{ counts['source_org:vainasherstudios'] or 0 }}</span></p>
+  </div>
+</div>
+
+<div class="three">
+  {% for field, rows in breakdowns.items() %}
+  <div class="card">
+    <h3>by {{ field.replace('_',' ') }}</h3>
+    <table>
+      <tbody>
+      {% for key, n in rows %}
+        <tr><td><a href="/?{{ field }}={{ key if key != '(none)' else '' }}&page_size=100">{{ key }}</a></td><td style="text-align:right">{{ n }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

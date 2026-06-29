@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h2>Configuration</h2>
+    <p class="muted">Runtime settings layered over environment variables. Precedence: <strong>saved value</strong> &rarr; environment variable &rarr; built-in default. Changes apply immediately — no restart. See the <a href="/guide">guide</a>.</p>
+  </div>
+  <a class="button secondary" href="/monitor">Open monitor</a>
+</div>
+
+{% if notice %}<div class="card notice">{{ notice }}</div>{% endif %}
+
+<div class="two">
+  <div class="card">
+    <h3>Settings</h3>
+    <form method="post" action="/config/save">
+      <label>Ollama URL <span class="help" tabindex="0" data-tip="The /api/generate endpoint of your local Ollama server. Health/model lookups reuse its host.">?</span> <span class="muted small">({{ settings.ollama_url.source }})</span></label>
+      <input name="ollama_url" value="{{ settings.ollama_url.value }}" placeholder="http://localhost:11434/api/generate">
+
+      <label>Default Ollama model <span class="help" tabindex="0" data-tip="Used for AI classification and transforms when no per-action model is given. Blank = deterministic only.">?</span> <span class="muted small">({{ settings.ollama_model.source }})</span></label>
+      {% if ollama.up and ollama.models %}
+        <select name="ollama_model">
+          <option value="">(none — deterministic fallback only)</option>
+          {% for m in ollama.models %}
+            <option value="{{ m.name }}" {% if m.name==settings.ollama_model.value %}selected{% endif %}>{{ m.name }} ({{ (m.size/1073741824)|round(1) }} GB)</option>
+          {% endfor %}
+        </select>
+      {% else %}
+        <input name="ollama_model" value="{{ settings.ollama_model.value }}" placeholder="llama3.1:8b">
+      {% endif %}
+
+      <label>Wiki.js GraphQL URL <span class="muted small">({{ settings.wikijs_url.source }})</span></label>
+      <input name="wikijs_url" value="{{ settings.wikijs_url.value }}" placeholder="http://localhost:3000/graphql">
+
+      <label>Wiki.js token <span class="muted small">({{ settings.wikijs_token.source }}{% if settings.wikijs_token.set %} — currently set{% endif %})</span></label>
+      <input name="wikijs_token" type="password" placeholder="{% if settings.wikijs_token.set %}leave blank to keep existing{% else %}paste token{% endif %}">
+
+      <div class="actions" style="margin-top:12px"><button>Save settings</button></div>
+    </form>
+    <p class="muted small">Token is stored in <code>data/settings.json</code> and never shown back here. To clear a value, edit or delete that file.</p>
+  </div>
+
+  <div class="card">
+    <h3>Ollama status</h3>
+    {% if ollama.up %}
+      <p><span class="pill ok">reachable</span> <span class="muted small">{{ ollama.base }}</span></p>
+      <p>{{ ollama.models|length }} model(s) installed{% if ollama.loaded %}; loaded now: {% for m in ollama.loaded %}<span class="pill">{{ m }}</span>{% endfor %}{% else %}; none loaded in memory{% endif %}</p>
+      <form method="post" action="/config/test-ollama">
+        <label>Quick model test (latency + speed)</label>
+        <select name="model">
+          {% for m in ollama.models %}
+            <option value="{{ m.name }}" {% if m.name==settings.ollama_model.value %}selected{% endif %}>{{ m.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="actions" style="margin-top:8px"><button class="secondary">Run test generation</button></div>
+      </form>
+    {% else %}
+      <p><span class="pill danger">unreachable</span> <span class="muted small">{{ ollama.base }}</span></p>
+      <p class="muted">Start Ollama (<code>ollama serve</code>) or fix the URL above. The refinery still works without it using deterministic classification and fallback drafts.</p>
+      {% if ollama.error %}<pre>{{ ollama.error }}</pre>{% endif %}
+    {% endif %}
+    <hr>
+    <h3>Model guidance</h3>
+    <ul class="small muted">
+      <li>Larger instruct models produce fuller, more usable drafts; 3B-class models tend to emit thin outputs.</li>
+      <li>Use the test button to compare words/second on this machine before bulk transforming.</li>
+      <li>The model only affects AI classification and transform quality — governance/safety rules are deterministic.</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

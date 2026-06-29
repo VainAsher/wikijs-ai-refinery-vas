@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h2>VAS context library</h2>
+    <p class="muted">Context packs are injected into AI transformations as higher authority than the source, so rewritten docs follow VainAsherStudios voice, services, tools, IaC, privacy rules, and support boundaries.</p>
+  </div>
+  <a class="button secondary" href="/">Back to queue</a>
+</div>
+<div class="two">
+  <div class="card">
+    <h3>Context packs</h3>
+    {% for pack in packs %}
+      <p><a href="/context?pack={{ pack.slug }}"><strong>{{ pack.title }}</strong></a><br><span class="muted small">{{ pack.filename }}</span></p>
+    {% endfor %}
+    <hr>
+    <h3>Create new pack</h3>
+    <form method="post" action="/context/save">
+      <label>Name</label><input name="name" placeholder="client_onboarding_rules">
+      <label>Content</label><textarea name="content" style="min-height:180px" placeholder="# Client Onboarding Rules\n\n- ..."></textarea>
+      <p><button>Create context pack</button></p>
+    </form>
+  </div>
+  <div class="card">
+    {% if selected %}
+    <h3>Edit {{ selected.title }}</h3>
+    <form method="post" action="/context/save">
+      <label>Name / slug</label><input name="name" value="{{ selected.slug }}">
+      <label>Context Markdown</label><textarea name="content">{{ selected.content }}</textarea>
+      <div class="actions"><button>Save context pack</button></div>
+    </form>
+    <form method="post" action="/context/delete" onsubmit="return confirm('Delete this context pack?')">
+      <input type="hidden" name="name" value="{{ selected.slug }}">
+      <button class="secondary">Delete context pack</button>
+    </form>
+    {% else %}
+    <h3>No context pack selected</h3>
+    <p class="muted">Choose a pack on the left, or create a new one. Suggested packs: brand voice, service catalogue, IaC stack, privacy rules, support boundaries, proposal language, customer promises, preferred tooling, and client onboarding assumptions.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

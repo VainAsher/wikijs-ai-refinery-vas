@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h2>Connectors</h2>
+    <p class="muted">One-off imports from a single source. For a large local Markdown import across several folders, use the <a href="/bulk">Bulk Workbench</a> instead.</p>
+  </div>
+  <a class="button secondary" href="/">Back to queue</a>
+</div>
+
+<div class="card">
+  <form method="post" action="/connectors/run">
+    <div class="three">
+      <div><label>Connector</label>
+        <select name="connector" id="connector-select" onchange="switchConnector(this.value)">
+          {% for c in connectors %}<option value="{{c}}">{{c}}</option>{% endfor %}
+        </select>
+      </div>
+      <div><label>Limit <span class="help" tabindex="0" data-tip="Maximum docs to import. 0 = all.">?</span></label><input type="number" name="limit" value="25"></div>
+      <div><label>Ollama classifier <span class="muted small">optional</span></label><input name="ollama_model" placeholder="blank = deterministic"></div>
+    </div>
+
+    <!-- Only the selected connector's fields are shown (progressive disclosure). -->
+    <div data-conn="local_markdown">
+      <h3>Local Markdown</h3>
+      <div class="notice small" style="margin-bottom:10px">Folder path(s): one per line, or several separated by semicolons. The label can be a plain value (<code>bisecthosting</code>) or per-line <code>label|path</code> mappings.</div>
+      <div class="two">
+        <div><label>Folder path(s)</label><textarea name="local_path" style="min-height:110px" placeholder="C:\docs\bisect&#10;C:\docs\apex"></textarea></div>
+        <div><label>Source label</label><textarea name="source_label" style="min-height:110px" placeholder="bisecthosting&#10;# or mappings:&#10;bisecthosting|C:\docs\bisect"></textarea></div>
+      </div>
+    </div>
+
+    <div data-conn="zendesk" class="hidden">
+      <h3>Zendesk</h3>
+      <label>Help Center URL <span class="help" tabindex="0" data-tip="Your Zendesk help center base URL; public articles are pulled via the API.">?</span></label>
+      <input name="zendesk_url" placeholder="https://help.example.com">
+    </div>
+
+    <div data-conn="mediawiki" class="hidden">
+      <h3>MediaWiki</h3>
+      <div class="two">
+        <div><label>API URL</label><input name="mediawiki_api_url" placeholder="https://wiki.example.com/api.php"></div>
+        <div><label>Cookie <span class="help" tabindex="0" data-tip="Optional browser session cookie for private wikis.">?</span></label><input name="mediawiki_cookie" placeholder="optional browser cookie"></div>
+      </div>
+    </div>
+
+    <div data-conn="clickup" class="hidden">
+      <h3>ClickUp</h3>
+      <div class="two">
+        <div><label>API token</label><input name="clickup_token" placeholder="pk_..."></div>
+        <div><label>Workspace ID</label><input name="clickup_workspace_id" placeholder="workspace id"></div>
+      </div>
+    </div>
+
+    <div data-conn="gdocs" class="hidden">
+      <h3>Google Docs</h3>
+      <div class="two">
+        <div><label>Drive folder ID</label><input name="gdocs_folder_id" placeholder="Drive folder ID"></div>
+        <div><label>Service-account credentials <span class="help" tabindex="0" data-tip="Path to a Google service-account JSON with read access to the folder.">?</span></label><input name="gdocs_credentials_json" value="credentials.json"></div>
+      </div>
+    </div>
+
+    <p style="margin-top:16px"><button>Import into review queue</button></p>
+  </form>
+</div>
+<script>switchConnector(document.getElementById('connector-select').value);</script>
+{% endblock %}
