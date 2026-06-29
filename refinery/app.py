@@ -42,13 +42,45 @@ def safe_context_slug(name: str) -> str:
 
 def ensure_default_contexts() -> None:
     defaults = {
+        'brand_manifesto.md': """# VainAsherStudios Brand Manifesto
+
+VainAsherStudios builds from the void: we make things that did not exist before, and we make them honestly.
+
+Core philosophy:
+
+- Belonging through craft. Communities are built, not harvested.
+- Rebellion through creation. We make rather than complain.
+- Enlightenment through learning. We teach openly and document in public.
+- Stewardship. We leave systems better than we found them.
+
+What this means for any document produced here:
+
+- It should help someone build, learn, or belong - not merely inform.
+- It should be honest about uncertainty, risk, assumptions, and next steps.
+- It should never copy third-party wording; source docs are reference only.
+- It should read like it was written by a person who has actually done the work.
+""",
         'brand_voice.md': """# VainAsherStudios Brand Voice
 
-- Calm, practical, discreet, privacy-conscious, and human-first.
-- Explain technical work in plain English without sounding patronising.
-- Be honest about uncertainty, risk, assumptions, and next steps.
-- Prefer stewardship, reliability, and long-term client trust over hype.
-- Avoid copying third-party wording; use source docs only as reference material.
+Underlying character: noir, technical, human, honest - hope beneath the cynicism.
+Think veteran gamer and seasoned sysadmin who has watched things break at 3am and still
+shows up to fix them. Dry humour, quiet confidence, debug and system metaphors.
+
+Always avoid: clickbait, corporate filler, fake hype, patronising explanations, and
+copying source wording.
+
+Layer the voice to the document type - clarity first, personality second:
+
+- Operational docs (SOPs, runbooks, troubleshooting, customer guides, business email
+  and DNS setup, managed IT): plain, calm, precise English. Get the reader to a correct
+  outcome with minimal friction. Keep flavour to a light touch - a wry aside at most.
+  Never let style obscure a step.
+- Community, content, and creative work (YouTube scripts, Twitch outlines, community
+  announcements, Discord staff guides, game lore, marketing): full VainAsherStudios
+  voice. Noir framing, system language, storytelling, the "transmission" feel. This is
+  where the brand should sound unmistakably ours.
+
+When unsure, default to clarity. A confused reader is never on-brand.
 """,
         'service_catalogue.md': """# VainAsherStudios Service Catalogue
 
@@ -80,12 +112,46 @@ Common VAS/self-hosted stack references may include:
 - Proxmox and backup/restore procedures
 - Infrastructure documentation should distinguish declared IaC truth from human operational SOPs.
 """,
+        'visual_identity.md': """# VainAsherStudios Visual Identity
+
+Use this when a document drives anything visual - content thumbnails, social posts,
+slides, game art direction, or UI copy that references brand styling. For purely
+operational/text documents this is informational only and must not change the writing.
+
+Palette:
+
+- Background: near-black (#0A0A0A)
+- Surface: graphite (#1C1C1C)
+- Primary: Ender Purple (#8A2BE2)
+- Highlight: violet (#CBA6F7)
+- Energy: electric green (#00FF9C), used sparingly as an accent
+
+Direction:
+
+- Dark first. Darkness is the canvas.
+- Purple is the code / ambience; green signals energy and activity.
+- Wear before shine - favour lived-in, textured looks over glossy polish.
+
+Colour tokens:
+
+```json
+{
+  "background": "#0A0A0A",
+  "surface": "#1C1C1C",
+  "primary": "#8A2BE2",
+  "highlight": "#CBA6F7",
+  "energy": "#00FF9C"
+}
+```
+""",
         'gaming_community_ops.md': """# Gaming Community Operations
 
 VAS supports and trains moderation/admin teams for gaming communities including Minecraft, Project Zomboid, Rust, and Discord-based communities.
 
 Principles:
 
+- Communities are built, not harvested: prioritise long-term belonging over short-term metrics.
+- Moderators are custodians, not police: guide and protect the space; enforce as a measured step, not a reflex.
 - Evidence-led moderation: act from logs, screenshots, reports, context, and clear rules.
 - Proportional enforcement: warning, mute, kick, temp ban, permanent ban, appeal route where appropriate.
 - Staff safety: moderators should not be left alone with high-conflict situations.
