@@ -1,0 +1,26 @@
+# Build context hygiene — keep the image small and free of host state/secrets.
+.git/
+.github/
+data/
+**/.secret_key
+.venv/
+venv/
+env/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+tests/
+docs/
+*.md
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.claude/

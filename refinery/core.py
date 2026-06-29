@@ -481,12 +481,18 @@ def ollama_status(generate_url='http://localhost:11434/api/generate', timeout: i
 def discover_ollama_url(current: str='', timeout: float=1.5) -> Optional[str]:
     """Probe the usual places an Ollama server lives and return the first reachable
     /api/generate URL, or None. Order: explicit OLLAMA_URL env, the currently
-    configured value, the Docker service name, then localhost. Adapted from ForgeOS's
-    discovery chain, trimmed to the hosts that matter for a local workbench."""
+    configured value, any OLLAMA_LAN_HOSTS (for homelab/LAN Ollama), the Docker host
+    gateway, the Docker service name, then localhost. Adapted from ForgeOS's discovery
+    chain. OLLAMA_LAN_HOSTS is a comma-separated list of host or host:port entries."""
+    lan = []
+    for h in os.getenv('OLLAMA_LAN_HOSTS', '').split(','):
+        h = h.strip()
+        if h:
+            lan.append(h if h.startswith(('http://', 'https://')) else f'http://{h}{"" if ":" in h else ":11434"}')
     candidates = []
-    for u in (os.getenv('OLLAMA_URL', ''), current,
-              'http://ollama:11434', 'http://host.docker.internal:11434',
-              'http://127.0.0.1:11434', 'http://localhost:11434'):
+    for u in ([os.getenv('OLLAMA_URL', ''), current] + lan +
+              ['http://host.docker.internal:11434', 'http://ollama:11434',
+               'http://127.0.0.1:11434', 'http://localhost:11434']):
         base = ollama_base_url(u) if u else ''
         if base and base not in candidates:
             candidates.append(base)

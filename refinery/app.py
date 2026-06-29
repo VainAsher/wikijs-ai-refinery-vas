@@ -1,9 +1,9 @@
 from __future__ import annotations
-import datetime as dt, os
+import base64, datetime as dt, os, secrets
 from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
 import time
 from refinery.connectors import CONNECTORS
@@ -23,6 +23,34 @@ CONTEXT_DIR=DATA/'vas_context'; CONTEXT_DIR.mkdir(parents=True,exist_ok=True)
 BRAND_PATH=DATA/'brand.yaml'
 app=FastAPI(title='Wiki.js AI Refinery - VAS Community Ops')
 templates=Jinja2Templates(directory=str(BASE/'templates'))
+
+# Optional HTTP Basic Auth — defense-in-depth when the app is exposed (e.g. behind a
+# Cloudflare tunnel). Active only when BOTH env vars are set, so local dev and tests
+# are unaffected. The container healthcheck path /healthz is always exempt.
+_BASIC_USER=os.getenv('REFINERY_BASIC_AUTH_USER','')
+_BASIC_PASS=os.getenv('REFINERY_BASIC_AUTH_PASS','')
+if _BASIC_USER and _BASIC_PASS:
+    @app.middleware('http')
+    async def _basic_auth(request: Request, call_next):
+        if request.url.path=='/healthz':
+            return await call_next(request)
+        hdr=request.headers.get('authorization','')
+        ok=False
+        if hdr.startswith('Basic '):
+            try:
+                user,_,pwd=base64.b64decode(hdr[6:]).decode('utf-8').partition(':')
+                ok=secrets.compare_digest(user,_BASIC_USER) and secrets.compare_digest(pwd,_BASIC_PASS)
+            except Exception:
+                ok=False
+        if not ok:
+            return Response('Authentication required',status_code=401,headers={'WWW-Authenticate':'Basic realm="VAS Refinery"'})
+        return await call_next(request)
+
+
+@app.get('/healthz')
+def healthz():
+    """Always-open liveness probe for Docker/Cloudflare healthchecks (no auth)."""
+    return JSONResponse({'status':'ok'})
 
 @app.exception_handler(DocNotFound)
 async def _doc_not_found(request: Request, exc: DocNotFound):

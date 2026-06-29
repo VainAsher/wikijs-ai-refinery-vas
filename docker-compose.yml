@@ -1,0 +1,63 @@
+# VainAsherStudios Wiki.js AI Refinery — homelab deployment.
+#
+#   cp .env.docker.example .env   # then edit it
+#   docker compose up -d --build
+#
+# The app runs in the container; your Ollama runs on the LAN/homelab (set OLLAMA_URL).
+# Add the Cloudflare tunnel with:  docker compose --profile tunnel up -d
+# See docs/deployment.md for the full guide (and the REQUIRED auth note).
+
+services:
+  refinery:
+    build: .
+    image: ${REFINERY_IMAGE:-ghcr.io/vainasher/wikijs-ai-refinery-vas:latest}
+    container_name: vas-refinery
+    restart: unless-stopped
+    environment:
+      REFINERY_DATA: /data
+      # --- Ollama (runs on your LAN/homelab, not in this container) -------------
+      # Point at your LAN Ollama, e.g. http://192.168.0.50:11434/api/generate
+      # The default reaches an Ollama running on the Docker host itself.
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434/api/generate}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral:latest}
+      # Extra hosts the in-app "Auto-detect Ollama" button should probe (comma list).
+      OLLAMA_LAN_HOSTS: ${OLLAMA_LAN_HOSTS:-}
+      # Larger context/output so transforms are detailed and use the VAS context.
+      OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-8192}
+      OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-4096}
+      # --- Secrets at rest ------------------------------------------------------
+      # Set a stable Fernet key so encrypted settings survive volume restores/moves.
+      # Generate: python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
+      # If empty, the app auto-generates one in the data volume.
+      REFINERY_SECRET_KEY: ${REFINERY_SECRET_KEY:-}
+      # --- App-level Basic Auth (defense-in-depth behind the tunnel) ------------
+      # Leave blank to disable. Strongly recommended in addition to Cloudflare Access.
+      REFINERY_BASIC_AUTH_USER: ${REFINERY_BASIC_AUTH_USER:-}
+      REFINERY_BASIC_AUTH_PASS: ${REFINERY_BASIC_AUTH_PASS:-}
+    volumes:
+      - refinery_data:/data
+    # Map a host port for direct LAN access. Not required when only the Cloudflare
+    # tunnel reaches the app (the tunnel connects over the internal Docker network).
+    ports:
+      - "${REFINERY_PORT:-8000}:8000"
+    # Lets the container reach an Ollama running on the Docker host (Linux).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Cloudflare tunnel — opt-in:  docker compose --profile tunnel up -d
+  # In the Cloudflare Zero Trust dashboard, point the tunnel's public hostname at the
+  # internal service  http://refinery:8000  and gate it with a Cloudflare Access policy.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: vas-refinery-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      # Required only when running the tunnel profile; cloudflared reports a missing token itself.
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - refinery
+    profiles: ["tunnel"]
+
+volumes:
+  refinery_data:

@@ -24,6 +24,11 @@ def test_pages_load(client):
         assert r.status_code == 200, path
 
 
+def test_healthz_is_open(client):
+    r = client.get('/healthz')
+    assert r.status_code == 200 and r.json()['status'] == 'ok'
+
+
 def test_missing_doc_404(client):
     r = client.get('/docs/999999')
     assert r.status_code == 404
