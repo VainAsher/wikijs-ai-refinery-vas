@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 import time
 from refinery.connectors import CONNECTORS
-from refinery.core import DIAL_OPTIONS, DIALS_DEFAULTS, SourceDoc, apply_redactions, brand_compliance, build_wiki_path, clean_markdown, derive_content_gaps, deterministic_classify, discover_ollama_url, enriched_markdown, load_brand, load_taxonomy, merge_ai_classification, normalise_dials, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_vas
+from refinery.core import DIAL_OPTIONS, DIALS_DEFAULTS, SourceDoc, apply_redactions, brand_compliance, build_wiki_path, clean_markdown, derive_content_gaps, deterministic_classify, discover_ollama_url, enriched_markdown, extract_facts, load_brand, load_taxonomy, merge_ai_classification, normalise_dials, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_vas
 from refinery.db import Store, import_key_for, DocNotFound
 from refinery.jobs import JOBS
 from refinery.settings import Settings
@@ -393,23 +393,65 @@ def quick(doc_id:int,action:str=Form(...),reviewed_by:str=Form('')):
     STORE.update_doc(doc_id,c,build_wiki_path(c)); return RedirectResponse('/',status_code=303)
 
 
-@app.post('/docs/{doc_id}/transform')
-def transform_doc(doc_id:int,target_action:str=Form('rewrite_into_sop'),ollama_model:str=Form(''),context_pack:List[str]=Form([]),extra_context:str=Form(''),
-                  tone:str=Form(''),audience:str=Form(''),length_bias:str=Form(''),citation_strictness:str=Form(''),reading_grade:str=Form(''),emoji_policy:str=Form(''),include_cta:Optional[str]=Form(None)):
-    row=STORE.get_doc(doc_id); c=STORE.classification(row); source=SourceDoc(title=row['title'],content=row['content'],source=row['source'],source_id=str(row['id']),source_url=row['source_url'] or '',raw_metadata={'row_id':row['id']})
-    context_text=read_context_packs(context_pack, extra_context)
-    dials=normalise_dials({'tone':tone,'audience':audience,'length_bias':length_bias,'citation_strictness':citation_strictness,'reading_grade':reading_grade,'emoji_policy':emoji_policy,'include_cta':include_cta if include_cta is not None else True})
-    model=ollama_model or SETTINGS.get('ollama_model') or None
+def _dials_from_form(tone,audience,length_bias,citation_strictness,reading_grade,emoji_policy,include_cta):
+    return normalise_dials({'tone':tone,'audience':audience,'length_bias':length_bias,'citation_strictness':citation_strictness,'reading_grade':reading_grade,'emoji_policy':emoji_policy,'include_cta':include_cta if include_cta is not None else True})
+
+
+def _run_transform(doc_id:int,target_action:str,model:Optional[str],context_text:str,dials:dict,verified:str='') -> int:
+    """Build, classify, brand-score, store, and log one VAS draft. Shared by the direct
+    transform and the fact-gated commit (which passes human-approved facts via verified)."""
+    row=STORE.get_doc(doc_id); c=STORE.classification(row)
+    source=SourceDoc(title=row['title'],content=row['content'],source=row['source'],source_id=str(row['id']),source_url=row['source_url'] or '',raw_metadata={'row_id':row['id']})
+    ctx=context_text
+    if verified.strip():
+        ctx=(ctx+'\n\n' if ctx else '')+'VERIFIED FACTS (human-approved, authoritative — prefer these over the source):\n'+verified.strip()
     _t0=time.time()
-    draft=transform_to_vas(source,c,target_action,model,SETTINGS.get('ollama_url'),context_text=context_text,dials=dials)
+    draft=transform_to_vas(source,c,target_action,model,SETTINGS.get('ollama_url'),context_text=ctx,dials=dials)
     _latency_ms=int((time.time()-_t0)*1000)
-    dc=deterministic_classify(draft,TAXONOMY); dc.source_org='vainasherstudios'; dc.source_role='owned'; dc.reuse_policy='owned_original'; dc.adaptation_action=target_action; dc.rewrite_status='draft_generated'; dc.review_status='needs_review'; dc.authority='draft'; dc.canonical=False; dc.customer_safe=False; dc.transform_source_doc_id=str(doc_id); dc.canonical_target=suggest_canonical_target(dc); dc.tags=sorted(set(dc.tags+['vas-transform','draft-generated']))
+    dc=deterministic_classify(draft,TAXONOMY); dc.source_org='vainasherstudios'; dc.source_role='owned'; dc.reuse_policy='owned_original'; dc.adaptation_action=target_action; dc.rewrite_status='draft_generated'; dc.review_status='needs_review'; dc.authority='draft'; dc.canonical=False; dc.customer_safe=False; dc.transform_source_doc_id=str(doc_id); dc.canonical_target=suggest_canonical_target(dc); dc.tags=sorted(set(dc.tags+['vas-transform','draft-generated']+(['fact-gated'] if verified.strip() else [])))
     bc=brand_compliance(draft.content, load_brand(BRAND_PATH), model, SETTINGS.get('ollama_url')); dc.brand_score=bc['overall_score']
     if bc['language_violations']: dc.reasons.append('Brand: avoided language found — '+', '.join(bc['language_violations']))
     new_id=STORE.add_doc(draft,dc,build_wiki_path(dc))
     STORE.add_run(source_doc_id=doc_id,new_doc_id=new_id,target_action=target_action,model=model or '',dials=dials,brand_score=bc['overall_score'],latency_ms=_latency_ms)
     c.adaptation_action=target_action; c.rewrite_status='draft_generated'; c.canonical_target=dc.canonical_target; c.transform_notes=f'Draft created as document #{new_id} (brand {bc["overall_score"]}/100)'
     STORE.update_doc(doc_id,c,build_wiki_path(c))
+    return new_id
+
+
+@app.post('/docs/{doc_id}/transform')
+def transform_doc(doc_id:int,target_action:str=Form('rewrite_into_sop'),ollama_model:str=Form(''),context_pack:List[str]=Form([]),extra_context:str=Form(''),
+                  tone:str=Form(''),audience:str=Form(''),length_bias:str=Form(''),citation_strictness:str=Form(''),reading_grade:str=Form(''),emoji_policy:str=Form(''),include_cta:Optional[str]=Form(None)):
+    dials=_dials_from_form(tone,audience,length_bias,citation_strictness,reading_grade,emoji_policy,include_cta)
+    model=ollama_model or SETTINGS.get('ollama_model') or None
+    new_id=_run_transform(doc_id,target_action,model,read_context_packs(context_pack,extra_context),dials)
+    return RedirectResponse(f'/docs/{new_id}',status_code=303)
+
+
+@app.post('/docs/{doc_id}/transform/prepare',response_class=HTMLResponse)
+def transform_prepare(request:Request,doc_id:int,target_action:str=Form('rewrite_into_sop'),ollama_model:str=Form(''),context_pack:List[str]=Form([]),extra_context:str=Form(''),
+                      tone:str=Form(''),audience:str=Form(''),length_bias:str=Form(''),citation_strictness:str=Form(''),reading_grade:str=Form(''),emoji_policy:str=Form(''),include_cta:Optional[str]=Form(None)):
+    """Stage 1 of the fact gate: extract keywords + facts and present them for the human
+    to edit/approve before any drafting happens (carries the run settings forward)."""
+    row=STORE.get_doc(doc_id)
+    model=ollama_model or SETTINGS.get('ollama_model') or None
+    facts=extract_facts(SourceDoc(title=row['title'],content=row['content'],source=row['source']),model,SETTINGS.get('ollama_url'))
+    carry={'target_action':target_action,'ollama_model':ollama_model,'context_pack':context_pack,'extra_context':extra_context,
+           'tone':tone,'audience':audience,'length_bias':length_bias,'citation_strictness':citation_strictness,
+           'reading_grade':reading_grade,'emoji_policy':emoji_policy,'include_cta':'true' if (include_cta is not None) else ''}
+    return templates.TemplateResponse(request,'transform_gate.html',{'row':row,'facts':facts,'carry':carry})
+
+
+@app.post('/docs/{doc_id}/transform/commit')
+def transform_commit(doc_id:int,target_action:str=Form('rewrite_into_sop'),ollama_model:str=Form(''),context_pack:List[str]=Form([]),extra_context:str=Form(''),
+                     verified_keywords:str=Form(''),verified_facts:str=Form(''),
+                     tone:str=Form(''),audience:str=Form(''),length_bias:str=Form(''),citation_strictness:str=Form(''),reading_grade:str=Form(''),emoji_policy:str=Form(''),include_cta:Optional[str]=Form(None)):
+    """Stage 2 of the fact gate: draft using the human-approved keywords + facts."""
+    dials=_dials_from_form(tone,audience,length_bias,citation_strictness,reading_grade,emoji_policy,include_cta)
+    model=ollama_model or SETTINGS.get('ollama_model') or None
+    verified=''
+    if verified_keywords.strip(): verified+='Keywords: '+', '.join(k.strip() for k in verified_keywords.splitlines() if k.strip())+'\n'
+    if verified_facts.strip(): verified+='Facts:\n'+'\n'.join('- '+f.strip() for f in verified_facts.splitlines() if f.strip())
+    new_id=_run_transform(doc_id,target_action,model,read_context_packs(context_pack,extra_context),dials,verified=verified)
     return RedirectResponse(f'/docs/{new_id}',status_code=303)
 
 

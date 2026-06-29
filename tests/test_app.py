@@ -78,6 +78,25 @@ def test_redaction_gate_flow(client, tmp_path):
     assert 'AKIAIOSFODNN7EXAMPLE' not in after.text and '[REDACTED:aws_access_key]' in after.text
 
 
+def test_fact_gate_prepare_and_commit(client, tmp_path):
+    # import a reference doc, open the fact gate, then commit to draft from approved facts
+    src = tmp_path / 'fg'; src.mkdir()
+    (src / 'f.md').write_text('# Restart\nStop the service, clear the cache, start it again.', encoding='utf-8')
+    client.post('/bulk/import-source-dirs',
+                data={'source_dirs': f'employer_hosting|{src}', 'limit': '0'}, follow_redirects=False)
+    _wait_for_jobs(client)
+    import re as _re
+    did = _re.search(r'/docs/(\d+)', client.get('/?q=Restart&page_size=100').text).group(1)
+    gate = client.post(f'/docs/{did}/transform/prepare',
+                       data={'target_action': 'rewrite_into_runbook'})
+    assert gate.status_code == 200 and 'Fact gate' in gate.text and 'verified_facts' in gate.text
+    commit = client.post(f'/docs/{did}/transform/commit',
+                         data={'target_action': 'rewrite_into_runbook',
+                               'verified_facts': 'Stop the service before clearing the cache.'},
+                         follow_redirects=False)
+    assert commit.status_code == 303 and '/docs/' in commit.headers['location']
+
+
 def test_config_save_roundtrip(client):
     r = client.post('/config/save',
                     data={'ollama_url': 'http://localhost:11434/api/generate',

@@ -122,7 +122,8 @@
       <div class="row">
         <div><label>Target <span class="help" tabindex="0" data-tip="What kind of VAS document to produce (SOP, runbook, moderation playbook, etc.).">?</span></label><select name="target_action">{% for x in taxonomy.adaptation_actions %}{% if x.startswith('rewrite_into_') %}<option value="{{x}}">{{x}}</option>{% endif %}{% endfor %}</select></div>
         <div><label>Ollama model <span class="muted small">optional</span></label><input name="ollama_model" placeholder="mistral:latest (blank = template)"></div>
-        <div style="flex:none"><label>&nbsp;</label><button>Generate draft</button></div>
+        <div style="flex:none"><label>&nbsp;</label><button data-tip="Generate the draft directly from the source.">Generate draft</button></div>
+        <div style="flex:none"><label>&nbsp;</label><button class="secondary" formaction="/docs/{{ row.id }}/transform/prepare" data-tip="Extract and verify key facts first, then draft only from what you approve.">Prepare with fact gate</button></div>
       </div>
       <details class="section" style="margin:10px 0;box-shadow:none">
         <summary>Variation dials <span class="sub">— tune tone, length, and structure</span></summary>

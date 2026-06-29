@@ -5,8 +5,20 @@ from refinery.core import (
     transform_to_vas, ollama_base_url, brand_tokens, reference_source_orgs,
     compute_confidence, interpret_confidence, scrub_findings, apply_redactions,
     normalise_dials, dials_directives, brand_compliance, brand_violations, DEFAULT_BRAND,
-    derive_content_gaps,
+    derive_content_gaps, extract_facts,
 )
+
+
+def test_extract_facts_deterministic_fallback():
+    doc = SourceDoc(title='Email Setup',
+                    content='# DNS records\nConfigure SPF to authorise senders. '
+                            'DKIM signs outgoing mail cryptographically. '
+                            'DMARC tells receivers how to handle failures.\n## Verification',
+                    source='employer_hosting')
+    out = extract_facts(doc, model=None)
+    assert out['keywords'] and out['facts']
+    # headings and substantive sentences become candidate facts
+    assert any('DNS' in f or 'SPF' in f or 'DKIM' in f for f in out['facts'])
 
 
 def test_derive_content_gaps_prioritises_rewrite_backlog():

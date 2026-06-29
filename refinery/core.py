@@ -590,6 +590,38 @@ def brand_compliance(text: str, brand: Dict[str, Any], model: Optional[str]=None
             'notes': 'Deterministic check (no model): score = 100 − 8×avoided-language hits.',
             'method': 'deterministic'}
 
+_FACT_STOPWORDS = set(('this that with from your have will been they them then than into over more most some '
+                       'such only also able when where which what their there here about would could should '
+                       'using used make made does done need needs the and for are not you can use any all').split())
+
+def extract_facts(doc: SourceDoc, model: Optional[str]=None, url='http://localhost:11434/api/generate') -> Dict[str, List[str]]:
+    """Pull candidate keywords + factual claims for the fact-verification gate (the
+    ForgeOS compliance-gate idea). Uses the LLM when a model is supplied, otherwise a
+    deterministic pass over headings, lead sentences, and frequent terms."""
+    content = doc.content or ''
+    if model:
+        data = ollama_json(
+            'Return JSON {"keywords": ["..."], "facts": ["..."]}. Extract up to 8 short keywords and '
+            'up to 8 concise, checkable factual claims from the document. Facts must be self-contained.\n'
+            f'TITLE: {doc.title}\nCONTENT:\n{content[:8000]}', model, url, timeout=90)
+        if data:
+            facts = [str(x).strip() for x in (data.get('facts') or []) if str(x).strip()][:8]
+            kws = [str(x).strip() for x in (data.get('keywords') or []) if str(x).strip()][:8]
+            if facts or kws:
+                return {'keywords': kws, 'facts': facts}
+    # deterministic fallback
+    lines = [l.strip() for l in content.splitlines() if l.strip()]
+    headings = [re.sub(r'^#+\s*', '', l) for l in lines if l.startswith('#')]
+    body = re.sub(r'^#+.*$', '', content, flags=re.M)
+    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', body) if 30 <= len(s.strip()) <= 200]
+    facts = (headings + sentences)[:8]
+    freq: Dict[str, int] = {}
+    for w in re.findall(r'[a-zA-Z][a-zA-Z0-9_-]{3,}', content.lower()):
+        if w not in _FACT_STOPWORDS:
+            freq[w] = freq.get(w, 0) + 1
+    kws = [w for w, _ in sorted(freq.items(), key=lambda x: -x[1])[:8]]
+    return {'keywords': kws, 'facts': facts}
+
 def derive_content_gaps(coverage: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Turn per-service coverage counts into prioritised content-gap suggestions
     (adapted from ForgeOS's gap analyzer, simplified to what the store can answer):

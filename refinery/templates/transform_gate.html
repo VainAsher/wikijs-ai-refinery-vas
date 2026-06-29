@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/docs/{{ row.id }}">‹ Back to document #{{ row.id }}</a></p>
+<div class="pagehead">
+  <div>
+    <h2>Fact gate</h2>
+    <p class="muted">Verify the extracted keywords and facts <strong>before</strong> any drafting. Edit freely and delete anything you can't confirm — only what you approve here is treated as authoritative. Nothing is generated until you commit.</p>
+  </div>
+  <a class="button secondary" href="/docs/{{ row.id }}">Cancel</a>
+</div>
+
+<form method="post" action="/docs/{{ row.id }}/transform/commit">
+  <!-- carry the run settings forward unchanged -->
+  <input type="hidden" name="target_action" value="{{ carry.target_action }}">
+  <input type="hidden" name="ollama_model" value="{{ carry.ollama_model }}">
+  <input type="hidden" name="extra_context" value="{{ carry.extra_context }}">
+  <input type="hidden" name="tone" value="{{ carry.tone }}">
+  <input type="hidden" name="audience" value="{{ carry.audience }}">
+  <input type="hidden" name="length_bias" value="{{ carry.length_bias }}">
+  <input type="hidden" name="citation_strictness" value="{{ carry.citation_strictness }}">
+  <input type="hidden" name="reading_grade" value="{{ carry.reading_grade }}">
+  <input type="hidden" name="emoji_policy" value="{{ carry.emoji_policy }}">
+  {% if carry.include_cta %}<input type="hidden" name="include_cta" value="true">{% endif %}
+  {% for p in carry.context_pack %}<input type="hidden" name="context_pack" value="{{ p }}">{% endfor %}
+
+  <div class="card">
+    <h3>Vetted keywords <span class="muted small">— one per line</span></h3>
+    <textarea name="verified_keywords" style="min-height:120px">{{ facts.keywords|join('\n') }}</textarea>
+    <h3 style="margin-top:14px">Vetted facts <span class="muted small">— one per line; delete any you can't confirm</span></h3>
+    <textarea name="verified_facts" style="min-height:240px">{{ facts.facts|join('\n') }}</textarea>
+    <div class="actions" style="margin-top:14px">
+      <button data-tip="Generates the VAS draft using only the facts you approved above.">Accept facts &amp; generate draft</button>
+      <a class="button secondary" href="/docs/{{ row.id }}">Cancel</a>
+    </div>
+  </div>
+</form>
+{% endblock %}
