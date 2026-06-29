@@ -8,6 +8,7 @@ Documentation for the **VainAsherStudios Wiki.js AI Refinery**. Start with the p
 | [governance.md](governance.md) | understand the safety model — the source registry, document states, and why governance is deterministic. |
 | [user-guide.md](user-guide.md) | learn every page and run the end-to-end workflows. |
 | [configuration.md](configuration.md) | configure settings, Ollama, Wiki.js, Anthropic, and secret encryption. |
+| [deployment.md](deployment.md) | deploy on a homelab via Docker Compose, with a LAN Ollama and a Cloudflare tunnel. |
 | [development.md](development.md) | run, test, use the CLI, and extend connectors/services/context/dials. |
 | [ux-and-flows.md](ux-and-flows.md) | understand the user, the story, the personas, and the key journeys. |
 

@@ -32,6 +32,18 @@ Open **http://127.0.0.1:8000**. The app seeds its own `data/` directory (SQLite 
 
 No AI is required: the refinery classifies and produces safe fallback drafts deterministically. A local **Ollama** model (optional) improves rewrite quality; an **Anthropic API key** (optional) enables a higher-quality cloud "reroll".
 
+### Homelab / Docker
+
+For a homelab deployment (app in a container, Ollama on the LAN, exposed via a Cloudflare tunnel):
+
+```bash
+cp .env.docker.example .env   # set OLLAMA_URL to your LAN Ollama, etc.
+docker compose up -d --build
+docker compose --profile tunnel up -d   # optional: Cloudflare tunnel
+```
+
+The app has **no built-in login** — gate any public exposure with Cloudflare Access and/or app Basic Auth. Full guide: **[docs/deployment.md](docs/deployment.md)**.
+
 ---
 
 ## Pages at a glance
@@ -80,6 +92,7 @@ See **[docs/](docs/)** for the full living documentation.
 | [docs/user-guide.md](docs/user-guide.md) | Page-by-page walkthrough and the end-to-end workflows. |
 | [docs/governance.md](docs/governance.md) | The safety model, the source registry, document states, and *why* it's deterministic. |
 | [docs/configuration.md](docs/configuration.md) | Settings precedence, environment variables, Ollama, Wiki.js, Anthropic, secret encryption. |
+| [docs/deployment.md](docs/deployment.md) | Homelab Docker Compose deploy, LAN Ollama, Cloudflare tunnel, and the security model. |
 | [docs/development.md](docs/development.md) | Running, testing, the headless CLI, and how to extend connectors/services/context. |
 | [docs/ux-and-flows.md](docs/ux-and-flows.md) | The user, the story, the personas, and the key journeys. |
 
