@@ -430,9 +430,27 @@ def normalise_assumptions(value: Any) -> List[str]:
         items = [str(value)]
     return [i for i in (s.strip() for s in items) if i]
 
-def ollama_json(prompt: str, model: str, url='http://localhost:11434/api/generate', timeout: int = 180) -> Optional[Dict[str,Any]]:
+# Ollama's default context window is small (2048 on many builds), which silently
+# truncates our long context+source prompts from the front — dropping the VAS context.
+# And forcing format=json makes models emit a tiny markdown value. So we (a) always set
+# a generous num_ctx, and (b) generate the transform as PLAIN text, not JSON.
+OLLAMA_NUM_CTX = int(os.getenv('OLLAMA_NUM_CTX', '8192'))         # prompt + output token budget
+OLLAMA_NUM_PREDICT = int(os.getenv('OLLAMA_NUM_PREDICT', '4096')) # max tokens for a generated draft
+
+def ollama_json(prompt: str, model: str, url='http://localhost:11434/api/generate', timeout: int = 180, options: Optional[Dict[str,Any]]=None) -> Optional[Dict[str,Any]]:
+    """Structured (JSON-mode) generation for classification/extraction. Sets num_ctx so
+    the whole prompt is actually read instead of being truncated to the model default."""
     try:
-        r=requests.post(url,json={'model':model,'prompt':prompt,'stream':False,'format':'json'},timeout=timeout); r.raise_for_status(); return json.loads(r.json().get('response','{}'))
+        body={'model':model,'prompt':prompt,'stream':False,'format':'json','options':options or {'num_ctx':OLLAMA_NUM_CTX}}
+        r=requests.post(url,json=body,timeout=timeout); r.raise_for_status(); return json.loads(r.json().get('response','{}'))
+    except Exception: return None
+
+def ollama_text(prompt: str, model: str, url='http://localhost:11434/api/generate', timeout: int = 300, options: Optional[Dict[str,Any]]=None) -> Optional[str]:
+    """Plain-text generation for long-form drafts. Avoids JSON mode (which makes models
+    under-generate) and gives a large num_ctx + num_predict so output is detailed."""
+    try:
+        body={'model':model,'prompt':prompt,'stream':False,'options':options or {'num_ctx':OLLAMA_NUM_CTX,'num_predict':OLLAMA_NUM_PREDICT}}
+        r=requests.post(url,json=body,timeout=timeout); r.raise_for_status(); return (r.json().get('response') or '').strip()
     except Exception: return None
 
 def ollama_base_url(generate_url: str) -> str:
@@ -663,40 +681,39 @@ def load_brand(path) -> Dict[str, Any]:
 def transform_to_vas(doc: SourceDoc, c: Classification, target_type: str, model: Optional[str]=None, url='http://localhost:11434/api/generate', context_text: str='', dials: Optional[Dict[str, Any]]=None) -> SourceDoc:
     target_labels={'rewrite_into_sop':'SOP','rewrite_into_runbook':'runbook','rewrite_into_customer_guide':'customer guide','rewrite_into_support_template':'support reply template','rewrite_into_policy':'policy','rewrite_into_training':'training document','rewrite_into_moderation_playbook':'moderation playbook','rewrite_into_admin_guide':'game/community admin guide','rewrite_into_lesson_plan':'moderator/admin lesson plan','rewrite_into_youtube_script':'YouTube training script','rewrite_into_linkedin_post':'LinkedIn educational post','rewrite_into_twitch_outline':'Twitch stream segment outline','rewrite_into_discord_staff_guide':'Discord staff guide','rewrite_into_community_announcement':'community announcement'}
     target=target_labels.get(target_type,'VainAsherStudios document')
-    prompt=f'''Return JSON with keys title, summary, markdown, assumptions.
-Create an original VainAsherStudios {target} from the source below.
-Rules:
-- Do not copy source wording or competitor/employer-specific phrasing.
-- Extract principles, workflow shape, risks, checks, and useful operational patterns.
-- Adapt for VainAsherStudios: website hosting, website development, managed IT, business email setup, AI workflow services, and gaming community operations.
-- When relevant, support Minecraft, Project Zomboid, Rust, Discord, Twitch, YouTube, and LinkedIn outputs.
-- For moderation/admin training outputs, focus on calm evidence-led moderation, proportional enforcement, escalation paths, safeguarding boundaries, and clear staff communication.
-- Remove source company names, prices, claims, platform-specific policies unless required as assumptions.
-- Mark assumptions clearly.
-- Write in a calm, practical, professional VainAsherStudios voice.
-- Treat the VainAsherStudios context as higher authority than the imported source.
-- Use VAS context for brand voice, service catalogue, tools, IaC, privacy rules, and operational assumptions.
-- If the source conflicts with VAS context, follow VAS context and list the conflict as an assumption/review note.
+    # Generate Markdown DIRECTLY (not via JSON mode, which crushes output length). The
+    # key directive is repeated after the source so the model weights it on recency.
+    prompt=f'''Write an original, detailed VainAsherStudios {target} in Markdown, based on the SOURCE below.
+
+Treat the VAINASHERSTUDIOS_CONTEXT as HIGHER AUTHORITY than the source. Rules:
+- Do not copy source wording or competitor/employer-specific phrasing; extract the principles, workflow, risks, checks, and operational patterns.
+- Adapt for VainAsherStudios services (hosting, web development, managed IT, business email, AI workflows, gaming community ops) and reference the VAS managed stack/tools from the context where relevant.
+- For moderation/admin outputs: calm, evidence-led moderation, proportional enforcement, escalation paths, safeguarding, clear staff wording.
+- Remove source company names, prices, and platform-specific policies unless needed as an assumption.
+- Write in the VainAsherStudios voice. Be thorough and well-structured: include a title, a short intro, prerequisites, a step-by-step procedure, verification/checks, risks, and escalation where appropriate.
+- End with a "## Assumptions for Review" section listing anything you assumed or any source/context conflicts.
 
 VARIATION DIRECTIVES (tune voice, length, and structure):
 {dials_directives(normalise_dials(dials))}
 
-VAINASHERSTUDIOS_CONTEXT:
-{context_text[:16000] if context_text else 'No additional VAS context pack supplied.'}
+VAINASHERSTUDIOS_CONTEXT (higher authority than the source):
+{context_text[:7000] if context_text else 'No additional VAS context pack supplied.'}
 
 SOURCE_ORG: {c.source_org}
 SOURCE_TITLE: {doc.title}
-TARGET_TYPE: {target}
-SOURCE_CONTENT:\n{doc.content[:14000]}'''
-    data = ollama_json(prompt, model, url) if model else None
-    if data and data.get('markdown'):
-        title=data.get('title') or f'VAS Draft - {doc.title}'
-        summary=data.get('summary') or f'Original VainAsherStudios {target} draft generated from reference material.'
-        assumptions=normalise_assumptions(data.get('assumptions'))
-        md=data['markdown'].strip()
-        if assumptions:
-            md += '\n\n## Assumptions for Review\n' + ''.join(f'\n- {a}' for a in assumptions)
-        return SourceDoc(title=title, content=md, source='vainasherstudios_transform', source_id='', source_url='', raw_metadata={'transformed_from':doc.source_id,'source_org':c.source_org,'target_type':target_type,'summary':summary})
+SOURCE_CONTENT:
+{doc.content[:8000]}
+
+Now write the complete Markdown {target}. Start with a single "# " title line, use the VAS context as higher authority, and be detailed.'''
+    text = ollama_text(prompt, model, url) if model else None
+    if text and len(text.strip()) >= 80:
+        md=clean_markdown(text)
+        # Title from the first H1 the model wrote, else a safe default.
+        title=next((l[2:].strip() for l in md.splitlines() if l.startswith('# ')), f'VAS Draft - {doc.title}')
+        # Summary from the first real paragraph (not a heading/bullet).
+        summary=next((l.strip() for l in md.splitlines() if l.strip() and not l.lstrip().startswith(('#','-','*','>'))), f'Original VainAsherStudios {target} draft.')[:300]
+        if not md.lstrip().startswith('# '): md=f'# {title}\n\n{md}'
+        return SourceDoc(title=title, content=md.strip(), source='vainasherstudios_transform', source_id='', source_url='', raw_metadata={'transformed_from':doc.source_id,'source_org':c.source_org,'target_type':target_type,'summary':summary})
     # safe deterministic fallback
     title=f'VAS Draft - {doc.title}'
     md=f'''# {title}
