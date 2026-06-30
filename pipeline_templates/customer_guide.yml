@@ -1,0 +1,143 @@
+id: customer_guide_pipeline
+name: Customer Guide Pipeline
+description: Produce a customer-safe public/customer-facing guide from governed source evidence.
+
+passes:
+  - id: clean_markdown
+    name: Clean Markdown
+    stage: preprocess
+    mode: deterministic
+    input_format: markdown
+    output_format: markdown
+    allowed_changes: [remove_scrape_artifacts, normalise_headings, preserve_code_blocks]
+    forbidden_changes: [remove_warnings, add_new_claims]
+    progressive_context:
+      include: [source_content]
+      exclude: []
+    retrieval:
+      collections: []
+      max_chunks: 0
+    gates: [non_empty_output]
+
+  - id: classify
+    name: Classify and Govern
+    stage: classify
+    mode: deterministic
+    input_format: markdown
+    output_format: metadata
+    allowed_changes: [metadata]
+    forbidden_changes: [source_governance_override]
+    progressive_context:
+      include: [source_content]
+      exclude: []
+    gates: [taxonomy_valid, source_governance_reasserted]
+
+  - id: fact_find
+    name: Fact Find
+    stage: analyse
+    mode: llm_optional
+    input_format: markdown
+    output_format: json
+    allowed_changes: [extract_facts, extract_risks, extract_assumptions]
+    forbidden_changes: [invent_claims]
+    progressive_context:
+      include: [source_content, classification]
+      exclude: [secrets]
+    retrieval:
+      collections: [current_source, approved_related_docs]
+      max_chunks: 8
+    gates: [facts_are_review_candidates]
+
+  - id: draft
+    name: Draft Customer Guide
+    stage: draft
+    mode: llm_optional
+    input_format: json
+    output_format: markdown
+    allowed_changes: [create_markdown, structure_sections, explain_concepts]
+    forbidden_changes: [expose_internal_notes, invent_service_promises, copy_source_wording]
+    progressive_context:
+      include: [approved_facts, assumptions, target_audience, service]
+      exclude: [raw_source_content, secrets]
+    retrieval:
+      collections: [vas_context, service_catalogue, customer_safe_docs]
+      max_chunks: 8
+    gates: [no_secret_leak, no_internal_notes]
+
+  - id: voice_pass
+    name: Apply Voice
+    stage: enrich
+    mode: llm_optional
+    input_format: markdown
+    output_format: markdown
+    allowed_changes: [wording, flow, clarity]
+    forbidden_changes: [add_new_factual_claims, remove_safety_warnings]
+    progressive_context:
+      include: [current_draft, target_audience]
+      exclude: [raw_source_content]
+    retrieval:
+      collections: [brand_voice]
+      max_chunks: 4
+    gates: [no_forbidden_change_marker]
+
+  - id: brand_pass
+    name: Apply Brand
+    stage: enrich
+    mode: llm_optional
+    input_format: markdown
+    output_format: markdown
+    allowed_changes: [wording, positioning, brand_consistency]
+    forbidden_changes: [alter_technical_steps, add_unverifiable_claims]
+    progressive_context:
+      include: [current_draft]
+      exclude: [raw_source_content]
+    retrieval:
+      collections: [brand_profile, vas_context]
+      max_chunks: 6
+    gates:
+      - brand_score_min: 80
+
+  - id: audience_check
+    name: Customer Audience Check
+    stage: validate
+    mode: llm_optional
+    input_format: markdown
+    output_format: markdown
+    allowed_changes: [simplify_language, remove_internal_detail, add_escalation_note]
+    forbidden_changes: [remove_risk_warning, add_admin_only_steps]
+    progressive_context:
+      include: [current_draft, target_audience, risks]
+      exclude: [raw_source_content, internal_notes]
+    retrieval:
+      collections: [customer_safety_rules]
+      max_chunks: 5
+    gates: [customer_safe]
+
+  - id: seo_enrichment
+    name: SEO Enrichment
+    stage: enrich
+    mode: llm_optional
+    input_format: markdown
+    output_format: markdown_plus_metadata
+    allowed_changes: [frontmatter, meta_description, faq_section, internal_link_suggestions]
+    forbidden_changes: [technical_steps, warnings, prices, service_promises]
+    progressive_context:
+      include: [current_draft, service, audience, canonical_target]
+      exclude: [raw_source_content, internal_notes]
+    retrieval:
+      collections: [approved_public_docs, service_catalogue]
+      max_chunks: 5
+    gates: [seo_metadata_present]
+
+  - id: final_gate
+    name: Final Deterministic Gate
+    stage: gate
+    mode: deterministic
+    input_format: markdown_plus_metadata
+    output_format: gate_report
+    allowed_changes: [metadata, report]
+    forbidden_changes: [content_rewrite]
+    progressive_context:
+      include: [current_draft, classification, metadata, facts]
+      exclude: []
+    gates: [no_secret_leak, source_governance_reasserted, human_review_required]
