@@ -13,8 +13,10 @@ The refinery is a single-process **FastAPI** application with a **server-rendere
 | `refinery/settings.py` | ~130 | Layered runtime settings (saved → env → default) with **Fernet encryption** of secret fields at rest. |
 | `refinery/refine.py` | ~80 | Optional Claude cloud "reroll" via the official `anthropic` SDK, with model pricing and a token/cost estimate. |
 | `refinery/connectors/` | — | Pluggable source connectors (`local_markdown`, `zendesk`, `mediawiki`, `clickup`, `gdocs`), each yielding `SourceDoc`s. |
-| `refinery/templates/` | — | 12 Jinja templates extending `base.html` (theme tokens, light/dark, the progress-tray poller). |
-| `refinery_cli.py` | — | Headless `import` / `export` / `publish` for scripting and CI. |
+| `refinery/pipeline/` | — | **v2 multi-pass enrichment pipeline**: `schema` (PassConfig/PipelineConfig + YAML loader), `state` (PipelineState/PassReport), `context` (ContextBuilder + safety filtering), `passes` (executors + run_pass), `validators` (deterministic gates), `runner` (run_pipeline → governed draft), `service` (run_and_persist). |
+| `refinery/chunking.py` · `refinery/retrieval.py` | — | Deterministic Markdown chunking and the keyword/optional-embedding retrieval index that feed pipeline context. |
+| `refinery/templates/` | — | Jinja templates extending `base.html` (theme tokens, light/dark, the progress-tray poller), incl. the pipeline pages. |
+| `refinery_cli.py` | — | Headless `import` / `export` / `publish` plus `pipeline` / `chunk` / `index` for scripting and CI. |
 | `taxonomy.yml` | — | The controlled vocabularies the classifier and UI dropdowns validate against. |
 
 ## Data model

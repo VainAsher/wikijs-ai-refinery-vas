@@ -94,6 +94,9 @@ See **[docs/](docs/)** for the full living documentation.
 | [docs/configuration.md](docs/configuration.md) | Settings precedence, environment variables, Ollama, Wiki.js, Anthropic, secret encryption. |
 | [docs/deployment.md](docs/deployment.md) | Homelab Docker Compose deploy, LAN Ollama, Cloudflare tunnel, and the security model. |
 | [docs/development.md](docs/development.md) | Running, testing, the headless CLI, and how to extend connectors/services/context. |
+| [docs/pipelines.md](docs/pipelines.md) | **v2 multi-pass enrichment pipelines** — running them (UI/CLI), templates, persistence. |
+| [docs/enrichment-passes.md](docs/enrichment-passes.md) | The pass catalogue, execution modes, deterministic gates, and how to add a pass. |
+| [docs/retrieval-context.md](docs/retrieval-context.md) | ContextBuilder, progressive vs retrieval context, chunking, and the retrieval index. |
 | [docs/ux-and-flows.md](docs/ux-and-flows.md) | The user, the story, the personas, and the key journeys. |
 
 ---

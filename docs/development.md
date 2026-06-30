@@ -89,6 +89,11 @@ Drop a Markdown file into `data/vas_context/` (or add it to the `ensure_default_
 
 Add it to `DIALS_DEFAULTS` / `DIAL_OPTIONS` (`core.py`), render it in the transform form, thread it through the `transform_doc` form params, and reference it in `dials_directives`.
 
+### A new pipeline pass or template
+
+- **Pass:** add the id to `KNOWN_PASS_IDS` (`pipeline/schema.py`), write `_my_pass(config, state, deps) -> PassReport` in `pipeline/passes.py` (deterministic, or LLM via `build_pass_prompt` with a deterministic fallback), register it in `EXECUTORS`, and add any new gate to `pipeline/validators.py` (and `CRITICAL_GATES` if blocking). Test with a mocked model — no live calls.
+- **Template:** drop a `.yml` in `pipeline_templates/`; it's validated on load and appears in the UI and CLI immediately. See [pipelines.md](pipelines.md) and [enrichment-passes.md](enrichment-passes.md).
+
 ## Conventions
 
 - Match the surrounding style: synchronous FastAPI handlers, raw `sqlite3` (no ORM), dense one-line route bodies in `app.py`, fuller documented functions in `core.py`.
