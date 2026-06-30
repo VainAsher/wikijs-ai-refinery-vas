@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 
 from refinery.core import SourceDoc, build_wiki_path
 from refinery.chunking import chunk_markdown
+from refinery.retrieval import keyword_rank
 from refinery.pipeline.context import ContextBuilder
 from refinery.pipeline.passes import PassDeps
 from refinery.pipeline.runner import run_pipeline
@@ -33,7 +34,7 @@ def run_and_persist(store, config: PipelineConfig, *, source_doc_id: int, taxono
                     collections: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     source = load_source_doc(store, source_doc_id)
     deps = PassDeps(taxonomy=taxonomy, brand=brand or {}, model=model, ollama_url=ollama_url,
-                    context_builder=ContextBuilder(collections=collections or {}),
+                    context_builder=ContextBuilder(collections=collections or {}, retriever=keyword_rank),
                     source_content=source.content, source_doc=source)
     run_id = store.add_pipeline_run(pipeline_id=config.id, source_doc_ids=[source_doc_id],
                                     target_action=target_action, service=service, audience=audience)
