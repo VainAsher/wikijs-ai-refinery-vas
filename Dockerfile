@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Application code (data/ is a mounted volume, never baked into the image).
 COPY refinery ./refinery
+COPY pipeline_templates ./pipeline_templates
 COPY taxonomy.yml refinery_cli.py ./
 
 RUN mkdir -p /data
