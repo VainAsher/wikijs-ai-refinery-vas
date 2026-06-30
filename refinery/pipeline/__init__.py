@@ -11,10 +11,12 @@ from refinery.pipeline.schema import (
     load_pipeline_dict, load_pipeline_file, load_pipeline_templates,
 )
 from refinery.pipeline.state import PipelineState, PassReport
+from refinery.pipeline.context import ContextBuilder, SAFETY_DENY
 
 __all__ = [
     'PassConfig', 'PipelineConfig', 'PipelineConfigError',
     'KNOWN_MODES', 'KNOWN_PASS_IDS',
     'load_pipeline_dict', 'load_pipeline_file', 'load_pipeline_templates',
     'PipelineState', 'PassReport',
+    'ContextBuilder', 'SAFETY_DENY',
 ]
