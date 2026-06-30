@@ -38,6 +38,29 @@ CREATE TABLE IF NOT EXISTS runs (
  latency_ms INTEGER NOT NULL DEFAULT 0,used_model INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_runs_created ON runs(created_at);
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,pipeline_id TEXT NOT NULL,source_doc_ids_json TEXT NOT NULL DEFAULT '[]',
+ target_action TEXT,service TEXT,audience TEXT,status TEXT NOT NULL DEFAULT 'running',new_doc_id INTEGER,
+ state_json TEXT NOT NULL DEFAULT '{}',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_created ON pipeline_runs(created_at);
+CREATE TABLE IF NOT EXISTS pass_runs (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,pipeline_run_id INTEGER NOT NULL,pass_id TEXT NOT NULL,status TEXT,
+ mode TEXT,model TEXT,report_json TEXT NOT NULL DEFAULT '{}',latency_ms INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pass_runs_pipeline ON pass_runs(pipeline_run_id);
+CREATE TABLE IF NOT EXISTS doc_lineage (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,parent_doc_id INTEGER,child_doc_id INTEGER,relationship TEXT,
+ pipeline_run_id INTEGER,pass_id TEXT,created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_doc_lineage_child ON doc_lineage(child_doc_id);
+CREATE TABLE IF NOT EXISTS doc_chunks (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,doc_id INTEGER NOT NULL,chunk_index INTEGER NOT NULL,
+ heading_path_json TEXT NOT NULL DEFAULT '[]',content TEXT NOT NULL,content_hash TEXT NOT NULL,
+ token_estimate INTEGER NOT NULL DEFAULT 0,summary TEXT,embedding_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_doc_chunks_doc ON doc_chunks(doc_id);
+CREATE INDEX IF NOT EXISTS idx_doc_chunks_hash ON doc_chunks(content_hash);
 '''
 
 
@@ -157,6 +180,74 @@ class Store:
 
     def list_runs(self, limit: int = 50) -> List[sqlite3.Row]:
         return list(self.conn.execute('SELECT * FROM runs ORDER BY id DESC LIMIT ?', (limit,)))
+
+    # --- Enrichment-pipeline persistence (v2) --------------------------------
+    def add_pipeline_run(self, *, pipeline_id: str, source_doc_ids: List[int], target_action: str,
+                         service: str, audience: str) -> int:
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        with self._lock:
+            cur = self.conn.execute(
+                'INSERT INTO pipeline_runs (pipeline_id,source_doc_ids_json,target_action,service,audience,status,created_at,updated_at) '
+                'VALUES (?,?,?,?,?,?,?,?)',
+                (pipeline_id, json.dumps(source_doc_ids), target_action, service, audience, 'running', now, now))
+            self.conn.commit(); return int(cur.lastrowid)
+
+    def finish_pipeline_run(self, run_id: int, *, status: str, state: Dict[str, Any],
+                            new_doc_id: Optional[int] = None) -> None:
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        with self._lock:
+            self.conn.execute(
+                'UPDATE pipeline_runs SET status=?, state_json=?, new_doc_id=?, updated_at=?, completed_at=? WHERE id=?',
+                (status, json.dumps(state, ensure_ascii=False), new_doc_id, now, now, run_id))
+            self.conn.commit()
+
+    def add_pass_run(self, pipeline_run_id: int, report: Dict[str, Any]) -> int:
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        with self._lock:
+            cur = self.conn.execute(
+                'INSERT INTO pass_runs (pipeline_run_id,pass_id,status,mode,model,report_json,latency_ms,created_at) '
+                'VALUES (?,?,?,?,?,?,?,?)',
+                (pipeline_run_id, report.get('pass_id', ''), report.get('status', ''), report.get('mode', ''),
+                 report.get('model', ''), json.dumps(report, ensure_ascii=False), int(report.get('latency_ms', 0)), now))
+            self.conn.commit(); return int(cur.lastrowid)
+
+    def add_doc_lineage(self, *, parent_doc_id: Optional[int], child_doc_id: int, relationship: str,
+                        pipeline_run_id: Optional[int] = None, pass_id: str = '') -> int:
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        with self._lock:
+            cur = self.conn.execute(
+                'INSERT INTO doc_lineage (parent_doc_id,child_doc_id,relationship,pipeline_run_id,pass_id,created_at) '
+                'VALUES (?,?,?,?,?,?)',
+                (parent_doc_id, child_doc_id, relationship, pipeline_run_id, pass_id, now))
+            self.conn.commit(); return int(cur.lastrowid)
+
+    def replace_doc_chunks(self, doc_id: int, chunks: List[Any]) -> int:
+        """Idempotently store a doc's chunks (delete-then-insert). Accepts DocChunk
+        objects or dicts with the same attributes."""
+        def g(c, k):
+            return c.get(k) if isinstance(c, dict) else getattr(c, k)
+        with self._lock:
+            self.conn.execute('DELETE FROM doc_chunks WHERE doc_id=?', (doc_id,))
+            for c in chunks:
+                self.conn.execute(
+                    'INSERT INTO doc_chunks (doc_id,chunk_index,heading_path_json,content,content_hash,token_estimate,summary,embedding_json) '
+                    'VALUES (?,?,?,?,?,?,?,?)',
+                    (doc_id, int(g(c, 'chunk_index')), json.dumps(g(c, 'heading_path')), g(c, 'content'),
+                     g(c, 'content_hash'), int(g(c, 'token_estimate')), None, None))
+            self.conn.commit()
+        return len(chunks)
+
+    def get_doc_chunks(self, doc_id: int) -> List[sqlite3.Row]:
+        return list(self.conn.execute('SELECT * FROM doc_chunks WHERE doc_id=? ORDER BY chunk_index', (doc_id,)))
+
+    def list_pipeline_runs(self, limit: int = 50) -> List[sqlite3.Row]:
+        return list(self.conn.execute('SELECT * FROM pipeline_runs ORDER BY id DESC LIMIT ?', (limit,)))
+
+    def get_pipeline_run(self, run_id: int) -> Optional[sqlite3.Row]:
+        return self.conn.execute('SELECT * FROM pipeline_runs WHERE id=?', (run_id,)).fetchone()
+
+    def list_pass_runs(self, pipeline_run_id: int) -> List[sqlite3.Row]:
+        return list(self.conn.execute('SELECT * FROM pass_runs WHERE pipeline_run_id=? ORDER BY id', (pipeline_run_id,)))
 
     def service_coverage(self, services: List[str]) -> List[Dict[str, Any]]:
         """Per-service doc counts split into VAS-owned vs reference, for gap analysis."""
