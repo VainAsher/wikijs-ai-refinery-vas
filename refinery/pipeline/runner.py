@@ -8,7 +8,7 @@ returns an in-memory PipelineResult the caller stores.
 """
 from __future__ import annotations
 import dataclasses
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from refinery.core import (
     Classification, SourceDoc, deterministic_classify, suggest_canonical_target,
@@ -59,7 +59,8 @@ def _build_draft(state: PipelineState, deps: PassDeps) -> tuple:
 def run_pipeline(config: PipelineConfig, deps: PassDeps, *,
                  target_action: str = 'rewrite_into_customer_guide',
                  service: str = 'unknown', audience: str = 'unknown',
-                 source_doc_ids: Optional[List[int]] = None) -> PipelineResult:
+                 source_doc_ids: Optional[List[int]] = None,
+                 progress: Optional[Callable[[int, int, str], None]] = None) -> PipelineResult:
     state = PipelineState(source_doc_ids=source_doc_ids or [], target_action=target_action,
                           service=service, audience=audience)
     # Seed the working markdown with the source; the clean pass tidies it, the draft
@@ -73,6 +74,8 @@ def run_pipeline(config: PipelineConfig, deps: PassDeps, *,
         gres = evaluate_gates(pc.gates, state, deps)
         report.metadata['gate_results'] = gres
         state.pass_reports[-1] = report.to_dict()        # re-snapshot with gate results
+        if progress:
+            progress(len(state.pass_reports), len(config.passes), pc.id)
         crit = [g for g in gres if g.get('critical') and not g.get('passed')]
         if report.status == 'gate_failed' or crit:
             status = 'failed'

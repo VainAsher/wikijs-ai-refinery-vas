@@ -7,7 +7,7 @@ is created with needs_review governance — never auto-published.
 """
 from __future__ import annotations
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from refinery.core import SourceDoc, build_wiki_path
 from refinery.chunking import chunk_markdown
@@ -31,7 +31,8 @@ def run_and_persist(store, config: PipelineConfig, *, source_doc_id: int, taxono
                     ollama_url: str = 'http://localhost:11434/api/generate',
                     target_action: str = 'rewrite_into_customer_guide',
                     service: str = 'unknown', audience: str = 'unknown',
-                    collections: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                    collections: Optional[Dict[str, Any]] = None,
+                    progress: Optional[Callable[[int, int, str], None]] = None) -> Dict[str, Any]:
     source = load_source_doc(store, source_doc_id)
     deps = PassDeps(taxonomy=taxonomy, brand=brand or {}, model=model, ollama_url=ollama_url,
                     context_builder=ContextBuilder(collections=collections or {}, retriever=keyword_rank),
@@ -39,7 +40,7 @@ def run_and_persist(store, config: PipelineConfig, *, source_doc_id: int, taxono
     run_id = store.add_pipeline_run(pipeline_id=config.id, source_doc_ids=[source_doc_id],
                                     target_action=target_action, service=service, audience=audience)
     result = run_pipeline(config, deps, target_action=target_action, service=service,
-                          audience=audience, source_doc_ids=[source_doc_id])
+                          audience=audience, source_doc_ids=[source_doc_id], progress=progress)
     for rep in result.state.pass_reports:
         store.add_pass_run(run_id, rep)
     new_doc_id = store.add_doc(result.draft, result.classification, build_wiki_path(result.classification))

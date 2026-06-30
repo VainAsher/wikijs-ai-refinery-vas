@@ -548,15 +548,25 @@ def pipeline_run_page(request:Request,run_id:int):
 
 @app.post('/docs/{doc_id}/run-pipeline')
 def run_doc_pipeline(doc_id:int,pipeline_id:str=Form(...),target_action:str=Form('rewrite_into_customer_guide'),
-                     service:str=Form('unknown'),audience:str=Form('customer'),ollama_model:str=Form('')):
+                     service:str=Form('unknown'),audience:str=Form('customer'),ollama_model:str=Form(''),
+                     deterministic:str=Form('')):
     tpls=pipeline_templates_map()
     if pipeline_id not in tpls:
         return RedirectResponse(f'/docs/{doc_id}?notice=Unknown+pipeline',status_code=303)
-    out=run_and_persist(STORE,tpls[pipeline_id],source_doc_id=doc_id,taxonomy=TAXONOMY,
-                        brand=load_brand(BRAND_PATH),model=ollama_model or SETTINGS.get('ollama_model') or None,
-                        ollama_url=SETTINGS.get('ollama_url'),target_action=target_action,service=service,audience=audience)
-    note=f"Pipeline+{out['status']}:+draft+%23{out['new_doc_id']}+(run+{out['run_id']})"
-    return RedirectResponse(f"/docs/{out['new_doc_id']}?notice={note}",status_code=303)
+    cfg=tpls[pipeline_id]
+    # Deterministic checkbox forces no model (fast); otherwise the typed model, else the
+    # configured default. Runs in the background so the page is never blocked (LLM passes
+    # can take ~a minute) — progress shows in the tray and links to the draft when done.
+    model=None if deterministic else (ollama_model or SETTINGS.get('ollama_model') or None)
+    def work(job):
+        out=run_and_persist(STORE,cfg,source_doc_id=doc_id,taxonomy=TAXONOMY,brand=load_brand(BRAND_PATH),
+                            model=model,ollama_url=SETTINGS.get('ollama_url'),target_action=target_action,
+                            service=service,audience=audience,
+                            progress=lambda done,total,pid: job.advance(1,f'{done}/{total} · {pid}'))
+        job.finish(f"{out['status']} → draft #{out['new_doc_id']} ({out['pass_count']} passes)",
+                   href=f"/docs/{out['new_doc_id']}")
+    JOBS.run('pipeline',f'Pipeline · {cfg.name} on doc #{doc_id}',work,total=len(cfg.passes))
+    return RedirectResponse(f'/docs/{doc_id}?notice=Pipeline+started+%E2%80%94+progress+in+the+tray',status_code=303)
 
 
 @app.get('/context',response_class=HTMLResponse)

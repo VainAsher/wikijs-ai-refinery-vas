@@ -36,6 +36,16 @@ def test_pipeline_runs_in_order_and_creates_governed_draft(taxonomy):
     assert all('gate_results' in r['metadata'] for r in res.state.pass_reports)
 
 
+def test_run_pipeline_reports_progress_per_pass(taxonomy):
+    cfg = load_pipeline_templates(REPO / 'pipeline_templates')['customer_guide_pipeline']
+    calls = []
+    run_pipeline(cfg, _deps(taxonomy, '# X\nSome body text.'),
+                 progress=lambda done, total, pid: calls.append((done, total, pid)))
+    assert [c[0] for c in calls] == list(range(1, len(cfg.passes) + 1))   # 1..N, in order
+    assert all(c[1] == len(cfg.passes) for c in calls)
+    assert calls[-1][2] == cfg.passes[-1].id                             # last call = last pass
+
+
 def test_critical_gate_failure_stops_pipeline(taxonomy):
     # clean -> final_gate over a doc with a live secret: clean keeps it (no draft pass),
     # so final_gate's no_secret_leak (critical) fails and the run stops as failed.
