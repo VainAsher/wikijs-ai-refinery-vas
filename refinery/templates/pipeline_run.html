@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h2>Pipeline run #{{ run['id'] }}</h2>
+    <p class="muted">{{ run['pipeline_id'] }} &middot; status <strong>{{ run['status'] }}</strong>
+      {% if run['new_doc_id'] %}&middot; draft <a href="/docs/{{ run['new_doc_id'] }}">#{{ run['new_doc_id'] }}</a>{% endif %}
+      &middot; {{ run['service'] }} / {{ run['audience'] }}</p>
+  </div>
+  <a class="button secondary" href="/pipelines">All pipelines</a>
+</div>
+
+<div class="card">
+  <h3>Passes</h3>
+  <div class="table-wrap"><table class="responsive">
+    <tr><th>#</th><th>Pass</th><th>Status</th><th>Mode</th><th>Changed</th><th>ms</th><th>Gates</th><th>Notes</th></tr>
+    {% for p in passes %}
+    <tr>
+      <td class="muted small">{{ loop.index }}</td>
+      <td><strong>{{ p['pass_id'] }}</strong></td>
+      <td><span class="pill {{ 'ok' if p['status'] in ('ok','') else '' }}">{{ p['status'] or 'ok' }}</span></td>
+      <td>{{ p['mode'] }}</td>
+      <td>{{ 'yes' if p['report'].get('changed') else '' }}</td>
+      <td class="muted small">{{ p['latency_ms'] }}</td>
+      <td class="small">
+        {% for g in p['report'].get('metadata', {}).get('gate_results', []) %}
+          <span class="pill {{ 'ok' if g['passed'] else '' }}" title="{{ g['message'] }}">{{ g['name'] }}{{ ' ✗' if not g['passed'] else '' }}</span>
+        {% endfor %}
+      </td>
+      <td class="muted small">
+        {% if p['report'].get('errors') %}{{ p['report']['errors'] | join('; ') }}{% endif %}
+        {% if p['report'].get('metadata', {}).get('note') %}{{ p['report']['metadata']['note'] }}{% endif %}
+        {% if p['report'].get('metadata', {}).get('brand_score') is not none %} brand {{ p['report']['metadata']['brand_score'] }}{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  <p class="muted small">Pipeline output is a draft requiring human review. Open the draft to review, edit, redact, and (only then) publish.</p>
+</div>
+{% endblock %}

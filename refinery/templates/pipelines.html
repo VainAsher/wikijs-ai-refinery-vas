@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h2>Enrichment pipelines</h2>
+    <p class="muted">Multi-pass pipelines turn governed source evidence into VainAsherStudios drafts: clean &rarr; classify &rarr; fact-find &rarr; draft &rarr; voice/brand/audience/SEO &rarr; gates. Output is always a draft for human review &mdash; never auto-published.</p>
+  </div>
+  <a class="button secondary" href="/">Back to queue</a>
+</div>
+
+<div class="card">
+  <h3>Available templates</h3>
+  {% if not templates %}<p class="muted">No pipeline templates found in <code>pipeline_templates/</code>.</p>{% endif %}
+  {% for t in templates %}
+    <p><strong>{{ t.name }}</strong> <span class="muted small">({{ t.id }})</span><br>
+    <span class="muted">{{ t.description }}</span><br>
+    <span class="muted small">Passes: {{ t.passes | join(' &rarr; ') | safe }}</span></p>
+  {% endfor %}
+  <p class="muted small">Run a pipeline from any document's review page (the &ldquo;Run enrichment pipeline&rdquo; panel), or via the CLI: <code>python refinery_cli.py pipeline run --pipeline customer_guide_pipeline --doc-id N</code>.</p>
+</div>
+
+<div class="card">
+  <h3>Recent runs</h3>
+  {% if not runs %}<p class="muted">No pipeline runs yet.</p>{% endif %}
+  {% if runs %}
+  <div class="table-wrap"><table class="responsive">
+    <tr><th>#</th><th>Pipeline</th><th>Status</th><th>Draft</th><th>Service</th><th>Audience</th><th>Created</th></tr>
+    {% for r in runs %}
+    <tr>
+      <td><a href="/pipelines/{{ r['id'] }}">{{ r['id'] }}</a></td>
+      <td>{{ r['pipeline_id'] }}</td>
+      <td><span class="pill {{ 'ok' if r['status']=='completed' else '' }}">{{ r['status'] }}</span></td>
+      <td>{% if r['new_doc_id'] %}<a href="/docs/{{ r['new_doc_id'] }}">#{{ r['new_doc_id'] }}</a>{% else %}&mdash;{% endif %}</td>
+      <td>{{ r['service'] }}</td><td>{{ r['audience'] }}</td>
+      <td class="muted small">{{ r['created_at'][:19] }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+</div>
+{% endblock %}

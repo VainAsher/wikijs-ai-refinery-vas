@@ -114,6 +114,27 @@
 {% endif %}
 
 <!-- Transform: an advanced/expert move, collapsed by default -->
+{% if pipelines %}
+<details class="section">
+  <summary>Run enrichment pipeline <span class="sub">— multi-pass: clean → fact-find → draft → voice/brand/audience/SEO → gates</span></summary>
+  <div class="body">
+    <p class="muted small">Runs this source through a bounded multi-pass pipeline and creates a governed VAS draft (needs review, never auto-published). Each pass is gated by deterministic safety checks. Add an Ollama model for richer drafting/voice, or leave blank for deterministic output.</p>
+    <form method="post" action="/docs/{{ row.id }}/run-pipeline">
+      <div class="row">
+        <div><label>Pipeline</label><select name="pipeline_id">{% for p in pipelines %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></div>
+        <div><label>Target</label><select name="target_action">{% for x in taxonomy.adaptation_actions %}{% if x.startswith('rewrite_into_') %}<option value="{{x}}">{{x}}</option>{% endif %}{% endfor %}</select></div>
+        <div><label>Audience</label><select name="audience">{% for x in taxonomy.audiences %}<option value="{{x}}" {% if c.audience==x %}selected{% endif %}>{{x}}</option>{% endfor %}</select></div>
+        <div><label>Service</label><input name="service" value="{{ c.service }}"></div>
+      </div>
+      <div class="row">
+        <div><label>Ollama model <span class="muted small">optional</span></label><input name="ollama_model" placeholder="mistral:latest (blank = deterministic)"></div>
+        <div style="flex:none"><label>&nbsp;</label><button data-tip="Run all passes and create a draft for review.">Run pipeline</button></div>
+      </div>
+    </form>
+    <p class="muted small">See all runs on the <a href="/pipelines">Pipelines</a> page.</p>
+  </div>
+</details>
+{% endif %}
 <details class="section">
   <summary>Transform into a VAS-owned draft <span class="sub">— creates a new editable draft, doesn't publish</span></summary>
   <div class="body">

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import base64, datetime as dt, os, secrets
+import base64, datetime as dt, json, os, secrets
 from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI, Form, Request
@@ -10,6 +10,7 @@ from refinery.connectors import CONNECTORS
 from refinery.core import DIAL_OPTIONS, DIALS_DEFAULTS, SourceDoc, apply_redactions, brand_compliance, build_wiki_path, clean_markdown, derive_content_gaps, deterministic_classify, discover_ollama_url, enriched_markdown, extract_facts, load_brand, load_taxonomy, merge_ai_classification, normalise_dials, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_vas
 from refinery.db import Store, import_key_for, DocNotFound
 from refinery.jobs import JOBS
+from refinery.pipeline import load_pipeline_templates, run_and_persist
 from refinery.refine import CLAUDE_MODELS, DEFAULT_CLAUDE_MODEL, claude_available, estimate_tokens, refine_with_claude
 from refinery.settings import Settings
 
@@ -381,7 +382,8 @@ def edit_alias(doc_id:int):
 def review_doc(request:Request,doc_id:int,notice:Optional[str]=None):
     row=STORE.get_doc(doc_id); c=STORE.classification(row)
     claude={'available':claude_available(),'configured':bool(SETTINGS.get('anthropic_api_key')),'models':CLAUDE_MODELS,'default':DEFAULT_CLAUDE_MODEL,'est_tokens':estimate_tokens(row['content'])}
-    return templates.TemplateResponse(request, 'review.html', {'row':row,'c':c,'taxonomy':TAXONOMY,'wiki_path':build_wiki_path(c),'content':row['content'],'context_packs':list_context_packs(),'findings':scrub_findings(row['content']),'notice':notice,'dial_options':DIAL_OPTIONS,'dial_defaults':DIALS_DEFAULTS,'claude':claude})
+    pipelines=[{'id':p.id,'name':p.name} for p in pipeline_templates_map().values()]
+    return templates.TemplateResponse(request, 'review.html', {'row':row,'c':c,'taxonomy':TAXONOMY,'wiki_path':build_wiki_path(c),'content':row['content'],'context_packs':list_context_packs(),'findings':scrub_findings(row['content']),'notice':notice,'dial_options':DIAL_OPTIONS,'dial_defaults':DIALS_DEFAULTS,'claude':claude,'pipelines':pipelines})
 
 
 @app.post('/docs/{doc_id}/refine')
@@ -522,6 +524,39 @@ def publish_doc(doc_id:int,wikijs_url:str=Form(''),wikijs_token:str=Form('')):
 @app.get('/docs/{doc_id}/markdown',response_class=PlainTextResponse)
 def md(doc_id:int):
     row=STORE.get_doc(doc_id); return enriched_markdown(STORE.classification(row),row['content'])
+
+
+def pipeline_templates_map():
+    """Load pipeline templates each call so edits are picked up without a restart."""
+    try: return load_pipeline_templates(Path('pipeline_templates'))
+    except Exception: return {}
+
+
+@app.get('/pipelines',response_class=HTMLResponse)
+def pipelines_page(request:Request):
+    tpls=[{'id':c.id,'name':c.name,'description':c.description,'passes':[p.id for p in c.passes]} for c in pipeline_templates_map().values()]
+    return templates.TemplateResponse(request,'pipelines.html',{'templates':tpls,'runs':STORE.list_pipeline_runs(50)})
+
+
+@app.get('/pipelines/{run_id}',response_class=HTMLResponse)
+def pipeline_run_page(request:Request,run_id:int):
+    run=STORE.get_pipeline_run(run_id)
+    if not run: return RedirectResponse('/pipelines',status_code=303)
+    passes=[{**{k:p[k] for k in p.keys()}, 'report':json.loads(p['report_json'] or '{}')} for p in STORE.list_pass_runs(run_id)]
+    return templates.TemplateResponse(request,'pipeline_run.html',{'run':run,'passes':passes})
+
+
+@app.post('/docs/{doc_id}/run-pipeline')
+def run_doc_pipeline(doc_id:int,pipeline_id:str=Form(...),target_action:str=Form('rewrite_into_customer_guide'),
+                     service:str=Form('unknown'),audience:str=Form('customer'),ollama_model:str=Form('')):
+    tpls=pipeline_templates_map()
+    if pipeline_id not in tpls:
+        return RedirectResponse(f'/docs/{doc_id}?notice=Unknown+pipeline',status_code=303)
+    out=run_and_persist(STORE,tpls[pipeline_id],source_doc_id=doc_id,taxonomy=TAXONOMY,
+                        brand=load_brand(BRAND_PATH),model=ollama_model or SETTINGS.get('ollama_model') or None,
+                        ollama_url=SETTINGS.get('ollama_url'),target_action=target_action,service=service,audience=audience)
+    note=f"Pipeline+{out['status']}:+draft+%23{out['new_doc_id']}+(run+{out['run_id']})"
+    return RedirectResponse(f"/docs/{out['new_doc_id']}?notice={note}",status_code=303)
 
 
 @app.get('/context',response_class=HTMLResponse)
