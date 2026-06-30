@@ -154,7 +154,9 @@ def _bullets(items) -> str:
 def _draft_from_facts(state: PipelineState, target: str) -> str:
     lines = [f"# VainAsherStudios {target.title()}", "",
              "> Draft generated for human review — an original VainAsherStudios working draft "
-             "built from extracted facts, not a republished source document.", ""]
+             "built from extracted facts, not a republished source document.", "",
+             f"This {target} was assembled by the VainAsherStudios enrichment pipeline from "
+             "approved facts and is awaiting human review before publication.", ""]
     if state.approved_facts:
         lines += ["## Key points", "", _bullets(state.approved_facts), ""]
     if state.risks:

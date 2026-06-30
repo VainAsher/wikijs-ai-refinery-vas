@@ -791,7 +791,7 @@ def merge_ai_classification(base: Classification, ai: Optional[Dict[str,Any]], t
     return base
 
 def build_wiki_path(c: Classification) -> str:
-    if c.source == 'vainasherstudios_transform': return c.canonical_target or suggest_canonical_target(c)
+    if c.source in ('vainasherstudios_transform', 'vainasherstudios_pipeline'): return c.canonical_target or suggest_canonical_target(c)
     if c.canonical and c.source_org == 'vainasherstudios': return c.canonical_target or suggest_canonical_target(c)
     return f'imports/{c.source_org}/{slugify(c.title)}'
 

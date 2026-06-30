@@ -14,6 +14,7 @@ from refinery.pipeline.state import PipelineState, PassReport
 from refinery.pipeline.context import ContextBuilder, SAFETY_DENY
 from refinery.pipeline.passes import PassDeps, EXECUTORS, run_pass
 from refinery.pipeline.validators import evaluate_gates, VALIDATORS, CRITICAL_GATES
+from refinery.pipeline.runner import run_pipeline, PipelineResult
 
 __all__ = [
     'PassConfig', 'PipelineConfig', 'PipelineConfigError',
@@ -23,4 +24,5 @@ __all__ = [
     'ContextBuilder', 'SAFETY_DENY',
     'PassDeps', 'EXECUTORS', 'run_pass',
     'evaluate_gates', 'VALIDATORS', 'CRITICAL_GATES',
+    'run_pipeline', 'PipelineResult',
 ]
