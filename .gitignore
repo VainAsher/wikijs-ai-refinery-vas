@@ -41,6 +41,8 @@ htmlcov/
 # --- Deploy state (created on the homelab host by scripts/deploy.sh) ---------
 /.deploy/
 /logs/
+# Default placeholder mount for source Markdown (set REFINERY_IMPORTS_DIR instead)
+/imports/
 
 # --- Editor / OS -------------------------------------------------------------
 .idea/

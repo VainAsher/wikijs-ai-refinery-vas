@@ -73,6 +73,20 @@ The GPU/Ollama box is typically separate from the app container. Three ways to r
 
 Ensure Ollama listens on the LAN (`OLLAMA_HOST=0.0.0.0` on that box) and that your firewall allows the app host to reach port 11434. Pull a capable model there: `ollama pull mistral` (per project guidance, `mistral:latest` gives the richest transforms).
 
+## Importing source Markdown into the container
+
+A container **cannot read host paths** (`C:\Users\...`, `/home/...`) unless they're mounted in — a Bulk/Connectors import of a host folder fails with *"Local Markdown path does not exist"*. Mount your corpus read-only:
+
+1. Set `REFINERY_IMPORTS_DIR` in `.env` to the host folder that **contains** your Markdown (Windows/Docker Desktop: `C:\Users\you\OneDrive\Desktop\my_docs`; homelab: `/srv/refinery/imports`).
+2. `docker compose up -d` to apply the mount (recreates the container).
+3. In the **Bulk Workbench**, import using **container** paths under `/imports`, e.g.:
+
+   ```
+   squarespace|/imports/squarespace_kb_articles
+   ```
+
+The folder is mounted read-only, so imports never modify your source files. (Running the app directly on the host instead of in a container can read host paths natively — handy for one-off local imports.)
+
 ## Cloudflare tunnel
 
 1. In **Cloudflare Zero Trust → Networks → Tunnels**, create a tunnel and copy its **token**.

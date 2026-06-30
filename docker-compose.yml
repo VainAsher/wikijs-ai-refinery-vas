@@ -36,6 +36,11 @@ services:
       REFINERY_BASIC_AUTH_PASS: ${REFINERY_BASIC_AUTH_PASS:-}
     volumes:
       - refinery_data:/data
+      # Source Markdown to import, mounted READ-ONLY. A container cannot see host
+      # paths like C:\... or /home/... unless they're mounted. Set REFINERY_IMPORTS_DIR
+      # to the host folder holding your Markdown, then import using /imports/... paths
+      # in the Bulk Workbench (e.g.  label|/imports/squarespace_kb_articles ).
+      - ${REFINERY_IMPORTS_DIR:-./imports}:/imports:ro
     # Map a host port for direct LAN access. Not required when only the Cloudflare
     # tunnel reaches the app (the tunnel connects over the internal Docker network).
     ports:
