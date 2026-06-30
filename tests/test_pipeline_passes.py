@@ -50,5 +50,6 @@ def test_final_gate_blocks_secret_leak(taxonomy):
 
 
 def test_unimplemented_pass_is_skipped(taxonomy):
-    st = PipelineState(); r = run_pass(PassConfig(id='draft'), st, _deps(taxonomy, ''))
+    # provenance_attach is a known pass id with no executor yet -> skipped (not errored).
+    st = PipelineState(); r = run_pass(PassConfig(id='provenance_attach'), st, _deps(taxonomy, ''))
     assert r.status == 'skipped' and st.pass_reports[-1]['status'] == 'skipped'
