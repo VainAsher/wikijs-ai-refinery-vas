@@ -56,15 +56,9 @@ def healthz():
 @app.exception_handler(DocNotFound)
 async def _doc_not_found(request: Request, exc: DocNotFound):
     doc_id = exc.args[0] if exc.args else '?'
-    # A stale link or a deleted/never-created id should be a clean 404, not a 500.
-    html = (
-        "<!doctype html><meta charset='utf-8'><title>Not found</title>"
-        "<div style='font-family:system-ui,sans-serif;max-width:640px;margin:4rem auto;padding:0 1rem'>"
-        f"<h1 style='margin-bottom:.25rem'>Document #{doc_id} not found</h1>"
-        "<p style='color:#666'>It may have been deleted, deduplicated, or the link is stale.</p>"
-        "<p><a href='/'>&larr; Back to the review queue</a></p></div>"
-    )
-    return HTMLResponse(html, status_code=404)
+    # A stale link or a deleted/never-created id should be a clean 404, not a 500 —
+    # rendered through the app shell (nav + theme) for consistency.
+    return templates.TemplateResponse(request, 'not_found.html', {'doc_id': doc_id}, status_code=404)
 
 
 def safe_context_slug(name: str) -> str:

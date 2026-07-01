@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pagehead">
+  <div>
+    <h2>Document #{{ doc_id }} not found</h2>
+    <p class="muted">It may have been deleted, deduplicated, or the link is stale.</p>
+  </div>
+  <a class="button secondary" href="/">Back to the queue</a>
+</div>
+{% endblock %}
