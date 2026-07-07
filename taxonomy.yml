@@ -27,6 +27,9 @@ doc_types:
   - admin_guide
   - stream_outline
   - discord_staff_guide
+  - bisectbot_mission
+  - ticketlab_scenario
+  - quiz
   - unknown
 audiences:
   - public
@@ -179,6 +182,9 @@ adaptation_actions:
   - rewrite_into_twitch_outline
   - rewrite_into_discord_staff_guide
   - rewrite_into_community_announcement
+  - rewrite_into_bisectbot_mission
+  - rewrite_into_ticketlab_scenario
+  - rewrite_into_quiz
   - gap_analysis_only
   - reject_archive
 rewrite_statuses:

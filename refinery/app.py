@@ -2,12 +2,12 @@ from __future__ import annotations
 import base64, datetime as dt, json, os, secrets
 from pathlib import Path
 from typing import Optional, List
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
 import time
 from refinery.connectors import CONNECTORS
-from refinery.core import DIAL_OPTIONS, DIALS_DEFAULTS, SourceDoc, apply_redactions, brand_compliance, build_wiki_path, clean_markdown, derive_content_gaps, deterministic_classify, discover_ollama_url, enriched_markdown, extract_facts, load_brand, load_taxonomy, merge_ai_classification, normalise_dials, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_vas
+from refinery.core import DIAL_OPTIONS, DIALS_DEFAULTS, TRAINING_ARTIFACT_TARGETS, SourceDoc, apply_redactions, brand_compliance, build_wiki_path, clean_markdown, derive_content_gaps, deterministic_classify, discover_ollama_url, enriched_markdown, extract_facts, load_brand, load_taxonomy, merge_ai_classification, normalise_dials, ollama_json, ollama_status, publish_to_wikijs, scan_sensitive, scrub_findings, slugify, suggest_canonical_target, transform_to_training_artifact, transform_to_vas
 from refinery.db import Store, import_key_for, DocNotFound
 from refinery.jobs import JOBS
 from refinery.pipeline import load_pipeline_templates, run_and_persist
@@ -447,10 +447,19 @@ def _run_transform(doc_id:int,target_action:str,model:Optional[str],context_text
     if verified.strip():
         ctx=(ctx+'\n\n' if ctx else '')+'VERIFIED FACTS (human-approved, authoritative — prefer these over the source):\n'+verified.strip()
     _t0=time.time()
-    draft=transform_to_vas(source,c,target_action,model,SETTINGS.get('ollama_url'),context_text=ctx,dials=dials)
+    training_artifact_type=next((t for t in TRAINING_ARTIFACT_TARGETS if target_action==f'rewrite_into_{t}'),None)
+    if training_artifact_type:
+        draft=transform_to_training_artifact(source,c,training_artifact_type,model,SETTINGS.get('ollama_url'),context_text=ctx)
+    else:
+        draft=transform_to_vas(source,c,target_action,model,SETTINGS.get('ollama_url'),context_text=ctx,dials=dials)
     _latency_ms=int((time.time()-_t0)*1000)
-    dc=deterministic_classify(draft,TAXONOMY); dc.source_org='vainasherstudios'; dc.source_role='owned'; dc.reuse_policy='owned_original'; dc.adaptation_action=target_action; dc.rewrite_status='draft_generated'; dc.review_status='needs_review'; dc.authority='draft'; dc.canonical=False; dc.customer_safe=False; dc.transform_source_doc_id=str(doc_id); dc.canonical_target=suggest_canonical_target(dc); dc.tags=sorted(set(dc.tags+['vas-transform','draft-generated']+(['fact-gated'] if verified.strip() else [])))
-    bc=brand_compliance(draft.content, load_brand(BRAND_PATH), model, SETTINGS.get('ollama_url')); dc.brand_score=bc['overall_score']
+    dc=deterministic_classify(draft,TAXONOMY); dc.source_org='vainasherstudios'; dc.source_role='owned'; dc.reuse_policy='owned_original'; dc.adaptation_action=target_action; dc.rewrite_status='draft_generated'; dc.review_status='needs_review'; dc.authority='draft'; dc.canonical=False; dc.customer_safe=False; dc.transform_source_doc_id=str(doc_id)
+    if training_artifact_type: dc.doc_type=training_artifact_type
+    dc.canonical_target=suggest_canonical_target(dc); dc.tags=sorted(set(dc.tags+['vas-transform','draft-generated']+(['fact-gated'] if verified.strip() else [])))
+    # Structured JSON training artifacts aren't prose - brand voice scoring doesn't apply.
+    bc={'overall_score':-1,'method':'n/a (structured training artifact)','language_violations':[]} if training_artifact_type \
+        else brand_compliance(draft.content, load_brand(BRAND_PATH), model, SETTINGS.get('ollama_url'))
+    dc.brand_score=bc['overall_score']
     if bc['language_violations']: dc.reasons.append('Brand: avoided language found — '+', '.join(bc['language_violations']))
     new_id=STORE.add_doc(draft,dc,build_wiki_path(dc))
     STORE.add_run(source_doc_id=doc_id,new_doc_id=new_id,target_action=target_action,model=model or '',dials=dials,brand_score=bc['overall_score'],latency_ms=_latency_ms)
@@ -589,6 +598,23 @@ def export(status:str='reviewed'):
     out=DATA/'export'; out.mkdir(parents=True,exist_ok=True); count=0
     for row in STORE.list_docs(status=status,limit=100000):
         c=STORE.classification(row); path=out/f'{build_wiki_path(c)}.md'; path.parent.mkdir(parents=True,exist_ok=True); path.write_text(enriched_markdown(c,row['content']),encoding='utf-8'); count+=1
+    return {'exported':count,'folder':str(out)}
+
+
+@app.get('/export/training/{artifact_type}')
+def export_training(artifact_type:str,status:str='reviewed'):
+    """Raw JSON export for a training artifact type (bisectbot_mission, ticketlab_scenario,
+    quiz) - written as plain JSON, not enriched_markdown-wrapped, so downstream modules
+    (e.g. BisectBot's TrainingMissionPackStore) can consume the file unmodified.
+    source='vainasherstudios_transform' excludes the untransformed source docs - transforming
+    a doc also stamps its own adaptation_action onto the source, which would otherwise leak
+    the source doc alongside the real draft. doc_type=artifact_type distinguishes the three
+    training artifact types, which all otherwise share the same source/adaptation_action."""
+    if artifact_type not in TRAINING_ARTIFACT_TARGETS:
+        raise HTTPException(404,f'unknown training artifact type: {artifact_type}')
+    out=DATA/'export'/'training'/artifact_type; out.mkdir(parents=True,exist_ok=True); count=0
+    for row in STORE.list_docs(status=status,source='vainasherstudios_transform',doc_type=artifact_type,limit=100000):
+        slug=slugify(row['title']); path=out/f'{slug}-{row["id"]}.json'; path.write_text(row['content'],encoding='utf-8'); count+=1
     return {'exported':count,'folder':str(out)}
 
 
