@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests, yaml
 
 DEFAULT_TAXONOMY = {
- 'doc_types':['sop','runbook','policy','how_to','troubleshooting','faq','customer_template','internal_note','architecture','iac_reference','service_overview','incident_report','postmortem','checklist','training','glossary','decision_record','draft','moderation_playbook','training_module','lesson_plan','content_script','social_post_template','community_announcement','incident_response','admin_guide','stream_outline','discord_staff_guide','unknown'],
+ 'doc_types':['sop','runbook','policy','how_to','troubleshooting','faq','customer_template','internal_note','architecture','iac_reference','service_overview','incident_report','postmortem','checklist','training','glossary','decision_record','draft','moderation_playbook','training_module','lesson_plan','content_script','social_post_template','community_announcement','incident_response','admin_guide','stream_outline','discord_staff_guide','bisectbot_mission','ticketlab_scenario','quiz','unknown'],
  'audiences':['public','customer','internal','admin_only','private','community_member','moderator','admin','trainee','content_audience','unknown'],
  'authorities':['canonical','approved','imported_unreviewed','draft','deprecated','conflicting','archived','unknown'],
  'risk_levels':['low','medium','high','critical'],
@@ -14,7 +14,7 @@ DEFAULT_TAXONOMY = {
  'source_orgs':['vainasherstudios','employer_hosting','competitor_hosting_1','competitor_hosting_2','infrastructure_provider_1','infrastructure_provider_2','authentik','pterodactyl','rust','canvas','traefik','mailcow','nextcloud','proxmox','cloudflare','invoice_ninja','wikijs','zammad','vaultwarden','paperless','forgejo','documenso','coolify','n8n','client','internal','community_reference','unknown'],
  'source_roles':['canonical','owned','reference_only','evidence','imported_source','competitor_reference','employer_reference','infrastructure_reference','vendor_documentation','community_reference','training_reference','unknown'],
  'reuse_policies':['owned_original','rewrite_required','reference_only','quote_prohibited','review_required','forbidden','owned_training_material','unknown'],
- 'adaptation_actions':['none','reference_only','rewrite_into_sop','rewrite_into_runbook','rewrite_into_customer_guide','rewrite_into_support_template','rewrite_into_policy','rewrite_into_training','rewrite_into_moderation_playbook','rewrite_into_admin_guide','rewrite_into_lesson_plan','rewrite_into_youtube_script','rewrite_into_linkedin_post','rewrite_into_twitch_outline','rewrite_into_discord_staff_guide','rewrite_into_community_announcement','gap_analysis_only','reject_archive'],
+ 'adaptation_actions':['none','reference_only','rewrite_into_sop','rewrite_into_runbook','rewrite_into_customer_guide','rewrite_into_support_template','rewrite_into_policy','rewrite_into_training','rewrite_into_moderation_playbook','rewrite_into_admin_guide','rewrite_into_lesson_plan','rewrite_into_youtube_script','rewrite_into_linkedin_post','rewrite_into_twitch_outline','rewrite_into_discord_staff_guide','rewrite_into_community_announcement','rewrite_into_bisectbot_mission','rewrite_into_ticketlab_scenario','rewrite_into_quiz','gap_analysis_only','reject_archive'],
  'rewrite_statuses':['not_required','needs_rewrite','draft_generated','in_review','approved','rejected'],
 }
 
@@ -400,9 +400,9 @@ def deterministic_classify(doc: SourceDoc, taxonomy: Dict[str,List[str]]) -> Cla
 
 def suggest_canonical_target(c: Classification) -> str:
     slug=slugify(c.title)
-    action_map={'rewrite_into_sop':'sops','rewrite_into_runbook':'runbooks','rewrite_into_policy':'policies','rewrite_into_customer_guide':'guides','rewrite_into_support_template':'templates/support-replies','rewrite_into_training':'training','rewrite_into_moderation_playbook':'community/moderation-playbooks','rewrite_into_admin_guide':'community/admin-guides','rewrite_into_lesson_plan':'training/lesson-plans','rewrite_into_youtube_script':'content/youtube','rewrite_into_linkedin_post':'content/linkedin','rewrite_into_twitch_outline':'content/twitch','rewrite_into_discord_staff_guide':'community/discord-staff-guides','rewrite_into_community_announcement':'community/announcements'}
+    action_map={'rewrite_into_sop':'sops','rewrite_into_runbook':'runbooks','rewrite_into_policy':'policies','rewrite_into_customer_guide':'guides','rewrite_into_support_template':'templates/support-replies','rewrite_into_training':'training','rewrite_into_moderation_playbook':'community/moderation-playbooks','rewrite_into_admin_guide':'community/admin-guides','rewrite_into_lesson_plan':'training/lesson-plans','rewrite_into_youtube_script':'content/youtube','rewrite_into_linkedin_post':'content/linkedin','rewrite_into_twitch_outline':'content/twitch','rewrite_into_discord_staff_guide':'community/discord-staff-guides','rewrite_into_community_announcement':'community/announcements','rewrite_into_bisectbot_mission':'training/bisectbot-missions','rewrite_into_ticketlab_scenario':'training/ticketlab-scenarios','rewrite_into_quiz':'training/quizzes'}
     base=action_map.get(c.adaptation_action,'reference')
-    if base in ['policies','reference']: return f'{base}/{slug}'
+    if base in ['policies','reference','training/bisectbot-missions','training/ticketlab-scenarios','training/quizzes']: return f'{base}/{slug}'
     return f'{base}/{c.service}/{slug}'
 
 def normalise_assumptions(value: Any) -> List[str]:
@@ -772,6 +772,109 @@ I’ll update you with what I find, what I’ve changed, and any recommended nex
 - Human reviewer must adapt service-specific steps before approval.
 '''
     return SourceDoc(title=title, content=md, source='vainasherstudios_transform', raw_metadata={'transformed_from':doc.source_id,'source_org':c.source_org,'target_type':target_type})
+
+# Structured JSON training content (BisectBot mission packs, TicketLab dialogue
+# scenarios, standalone quizzes) is a sibling output to transform_to_vas's markdown VAS
+# documents - same governed-source discipline (evidence not truth, always a draft for
+# human review), different output shape consumed by other platform modules rather than
+# published to Wiki.js.
+TRAINING_ARTIFACT_TARGETS = ('bisectbot_mission', 'ticketlab_scenario', 'quiz')
+_TRAINING_TARGET_LABELS = {
+    'bisectbot_mission': 'BisectBot training mission pack',
+    'ticketlab_scenario': 'TicketLab dialogue-case scenario',
+    'quiz': 'standalone quiz / knowledge check',
+}
+_TRAINING_TARGET_SCHEMAS = {
+    'bisectbot_mission': '{"id": string, "title": string, "topic": string, "difficulty": integer 1-5, "estimated_minutes": integer, "briefing": string, "quizzes": [{"id": string, "prompt": string, "choices": [string, ...], "correctAnswers": [integer, ...]}]}',
+    'ticketlab_scenario': '{"id": string, "title": string, "difficulty": "beginner"|"intermediate"|"advanced", "ticket_subject": string, "customer_opening_message": string, "solution_label": string, "facts": [string, ...]}',
+    'quiz': '{"id": string, "title": string, "questions": [{"id": string, "prompt": string, "choices": [string, ...], "correctAnswers": [integer, ...]}]}',
+}
+
+def _stub_bisectbot_mission(doc: SourceDoc) -> Dict[str, Any]:
+    slug = slugify(doc.title)
+    return {'id': slug, 'title': doc.title, 'topic': slug, 'difficulty': 2, 'estimated_minutes': 5,
+            'briefing': f'[NEEDS AUTHOR REVIEW] Draft mission briefing generated without AI assistance from source doc "{doc.title}".',
+            'quizzes': [{'id': f'{slug}__q1', 'prompt': '[NEEDS AUTHOR REVIEW] Write a real question about this topic.',
+                         'choices': ['[NEEDS AUTHOR REVIEW] option A', 'option B', 'option C', 'option D'], 'correctAnswers': [0]}]}
+
+def _stub_ticketlab_scenario(doc: SourceDoc) -> Dict[str, Any]:
+    slug = slugify(doc.title)
+    return {'id': slug, 'title': doc.title, 'difficulty': 'intermediate',
+            'ticket_subject': f'[NEEDS AUTHOR REVIEW] {doc.title}',
+            'customer_opening_message': '[NEEDS AUTHOR REVIEW] Draft customer message generated without AI assistance.',
+            'solution_label': slug, 'facts': ['[NEEDS AUTHOR REVIEW] key fact from source']}
+
+def _stub_quiz(doc: SourceDoc) -> Dict[str, Any]:
+    slug = slugify(doc.title)
+    return {'id': slug, 'title': doc.title,
+            'questions': [{'id': f'{slug}__q1', 'prompt': '[NEEDS AUTHOR REVIEW] Write a real question about this topic.',
+                           'choices': ['[NEEDS AUTHOR REVIEW] option A', 'option B', 'option C', 'option D'], 'correctAnswers': [0]}]}
+
+_STUB_BUILDERS = {'bisectbot_mission': _stub_bisectbot_mission, 'ticketlab_scenario': _stub_ticketlab_scenario, 'quiz': _stub_quiz}
+_TITLE_GETTERS = {t: (lambda a: a.get('title', '')) for t in TRAINING_ARTIFACT_TARGETS}
+
+def _valid_quiz_shape(q: Any) -> bool:
+    """True only if every correctAnswers index actually points at a real choice.
+    A shape-valid-but-out-of-range quiz (choices has 3 entries, correctAnswers has a 3)
+    has been observed from real Ollama output and will break every downstream
+    consumer's own stricter validator (e.g. BisectBot's TrainingMissionPackStore)."""
+    if not isinstance(q, dict): return False
+    choices, correct = q.get('choices'), q.get('correctAnswers')
+    if not isinstance(choices, list) or not choices: return False
+    if not isinstance(correct, list) or not correct: return False
+    return all(isinstance(i, int) and 0 <= i < len(choices) for i in correct)
+
+def validate_training_artifact(artifact_type: str, data: Any) -> Tuple[bool, str]:
+    """Plain shape check - no BisectBot/TicketLab schema code is imported here. Keeps
+    the refinery independent of its downstream consumers' own code."""
+    if artifact_type not in TRAINING_ARTIFACT_TARGETS: return False, f'unknown artifact_type {artifact_type}'
+    if not isinstance(data, dict): return False, 'not a JSON object'
+    if not data.get('id') or not data.get('title'): return False, 'missing id/title'
+    if artifact_type == 'bisectbot_mission':
+        if not data.get('briefing'): return False, 'missing briefing'
+        quizzes = data.get('quizzes')
+        if not isinstance(quizzes, list) or not quizzes: return False, 'missing quizzes'
+        if not all(_valid_quiz_shape(q) for q in quizzes): return False, 'malformed quiz (out-of-range correctAnswers or empty choices)'
+    elif artifact_type == 'ticketlab_scenario':
+        if not data.get('ticket_subject') or not data.get('customer_opening_message'): return False, 'missing ticket_subject/customer_opening_message'
+        if not data.get('solution_label'): return False, 'missing solution_label'
+    elif artifact_type == 'quiz':
+        questions = data.get('questions')
+        if not isinstance(questions, list) or not questions: return False, 'missing questions'
+        if not all(_valid_quiz_shape(q) for q in questions): return False, 'malformed question (out-of-range correctAnswers or empty choices)'
+    return True, ''
+
+def transform_to_training_artifact(doc: SourceDoc, c: Classification, artifact_type: str, model: Optional[str]=None, url='http://localhost:11434/api/generate', context_text: str='') -> SourceDoc:
+    label = _TRAINING_TARGET_LABELS.get(artifact_type, artifact_type)
+    schema = _TRAINING_TARGET_SCHEMAS.get(artifact_type, '{}')
+    data = None
+    if model:
+        prompt = f'''Produce ONE original {label} as a single JSON object, based on the SOURCE below.
+
+Treat the SOURCE as evidence, not truth to copy - extract the underlying facts, workflow, and troubleshooting steps, then write fresh original wording for VainAsherStudios training content. Remove source company names and any competitor/employer-specific phrasing.
+
+Return ONLY a JSON object shaped like this (types are illustrative - use real content):
+{schema}
+
+VAINASHERSTUDIOS_CONTEXT (higher authority than the source):
+{context_text[:4000] if context_text else 'No additional VAS context pack supplied.'}
+
+SOURCE_TITLE: {doc.title}
+SOURCE_CONTENT:
+{doc.content[:6000]}
+
+Return ONLY the JSON object, no surrounding prose.'''
+        data = ollama_json(prompt, model, url)
+    ok = False
+    if data is not None:
+        ok, _reason = validate_training_artifact(artifact_type, data)
+    if not ok:
+        data = _STUB_BUILDERS[artifact_type](doc)
+    title = _TITLE_GETTERS.get(artifact_type, lambda a: doc.title)(data) or f'{label} - {doc.title}'
+    content = json.dumps(data, ensure_ascii=False, indent=2)
+    return SourceDoc(title=title, content=content, source='vainasherstudios_transform', source_id='', source_url='',
+                      raw_metadata={'transformed_from': doc.source_id, 'source_org': c.source_org,
+                                    'target_type': f'rewrite_into_{artifact_type}', 'artifact_type': artifact_type})
 
 def merge_ai_classification(base: Classification, ai: Optional[Dict[str,Any]], taxonomy: Dict[str,List[str]]) -> Classification:
     if not ai: return base

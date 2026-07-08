@@ -4,6 +4,7 @@ The client fixture points the app at an isolated REFINERY_DATA (see conftest), s
 these tests never touch a real store and don't require Ollama or Wiki.js.
 """
 import time
+from pathlib import Path
 
 
 def _wait_for_jobs(client, timeout=10.0):
@@ -120,3 +121,42 @@ def test_publish_without_config_reports_message(client, tmp_path):
     _wait_for_jobs(client)
     listing = client.get('/?source_org=infrastructure_provider_1')
     assert 'Email Setup' in listing.text
+
+
+def test_training_artifact_transform_review_and_export(client, tmp_path):
+    # import a source doc, transform it straight into a quiz (no model configured -
+    # exercises the deterministic fallback), approve it, then export it as raw JSON
+    # and confirm the untransformed source doc doesn't leak into the export folder.
+    import json, re as _re
+    src = tmp_path / 'quizsrc'; src.mkdir()
+    (src / 'q.md').write_text('# RCON Basics\nUse the rcon command to message players.', encoding='utf-8')
+    client.post('/bulk/import-source-dirs',
+                data={'source_dirs': f'employer_hosting|{src}', 'limit': '0'}, follow_redirects=False)
+    _wait_for_jobs(client)
+    source_id = _re.search(r'/docs/(\d+)', client.get('/?q=RCON+Basics&page_size=100').text).group(1)
+
+    transform = client.post(f'/docs/{source_id}/transform',
+                            data={'target_action': 'rewrite_into_quiz'}, follow_redirects=False)
+    assert transform.status_code == 303
+    draft_id = _re.search(r'/docs/(\d+)', transform.headers['location']).group(1)
+    assert draft_id != source_id
+
+    draft_page = client.get(f'/docs/{draft_id}')
+    assert draft_page.status_code == 200
+
+    approve = client.post(f'/docs/{draft_id}/quick', data={'action': 'approve'}, follow_redirects=False)
+    assert approve.status_code == 303
+
+    exported = client.get('/export/training/quiz')
+    assert exported.status_code == 200
+    body = exported.json()
+    assert body['exported'] >= 1
+    files = list(Path(body['folder']).glob('*.json'))
+    assert files, 'expected at least one exported quiz JSON file'
+    contents = [json.loads(f.read_text(encoding='utf-8')) for f in files]
+    assert all('questions' in c for c in contents)  # only the quiz draft, never the raw source doc
+
+
+def test_export_training_rejects_unknown_artifact_type(client):
+    r = client.get('/export/training/not_a_real_type')
+    assert r.status_code == 404
