@@ -449,7 +449,7 @@ def _run_transform(doc_id:int,target_action:str,model:Optional[str],context_text
     _t0=time.time()
     training_artifact_type=next((t for t in TRAINING_ARTIFACT_TARGETS if target_action==f'rewrite_into_{t}'),None)
     if training_artifact_type:
-        draft=transform_to_training_artifact(source,c,training_artifact_type,model,SETTINGS.get('ollama_url'),context_text=ctx)
+        draft=transform_to_training_artifact(source,c,training_artifact_type,model,SETTINGS.get('ollama_url'))
     else:
         draft=transform_to_vas(source,c,target_action,model,SETTINGS.get('ollama_url'),context_text=ctx,dials=dials)
     _latency_ms=int((time.time()-_t0)*1000)
@@ -612,9 +612,10 @@ def export_training(artifact_type:str,status:str='reviewed'):
     training artifact types, which all otherwise share the same source/adaptation_action."""
     if artifact_type not in TRAINING_ARTIFACT_TARGETS:
         raise HTTPException(404,f'unknown training artifact type: {artifact_type}')
+    ext='yaml' if artifact_type=='ticketlab_scenario' else 'json'
     out=DATA/'export'/'training'/artifact_type; out.mkdir(parents=True,exist_ok=True); count=0
     for row in STORE.list_docs(status=status,source='vainasherstudios_transform',doc_type=artifact_type,limit=100000):
-        slug=slugify(row['title']); path=out/f'{slug}-{row["id"]}.json'; path.write_text(row['content'],encoding='utf-8'); count+=1
+        path=out/f'{slugify(row["title"])}.{ext}'; path.write_text(row['content'],encoding='utf-8'); count+=1
     return {'exported':count,'folder':str(out)}
 
 

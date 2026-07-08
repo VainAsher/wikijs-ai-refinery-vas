@@ -773,108 +773,201 @@ I’ll update you with what I find, what I’ve changed, and any recommended nex
 '''
     return SourceDoc(title=title, content=md, source='vainasherstudios_transform', raw_metadata={'transformed_from':doc.source_id,'source_org':c.source_org,'target_type':target_type})
 
-# Structured JSON training content (BisectBot mission packs, TicketLab dialogue
-# scenarios, standalone quizzes) is a sibling output to transform_to_vas's markdown VAS
-# documents - same governed-source discipline (evidence not truth, always a draft for
-# human review), different output shape consumed by other platform modules rather than
-# published to Wiki.js.
 TRAINING_ARTIFACT_TARGETS = ('bisectbot_mission', 'ticketlab_scenario', 'quiz')
+
 _TRAINING_TARGET_LABELS = {
-    'bisectbot_mission': 'BisectBot training mission pack',
-    'ticketlab_scenario': 'TicketLab dialogue-case scenario',
-    'quiz': 'standalone quiz / knowledge check',
+    'bisectbot_mission': 'a BisectBot training mission pack',
+    'ticketlab_scenario': 'a TicketLab support-simulation scenario',
+    'quiz': 'a single multiple-choice quiz question',
 }
+
 _TRAINING_TARGET_SCHEMAS = {
-    'bisectbot_mission': '{"id": string, "title": string, "topic": string, "difficulty": integer 1-5, "estimated_minutes": integer, "briefing": string, "quizzes": [{"id": string, "prompt": string, "choices": [string, ...], "correctAnswers": [integer, ...]}]}',
-    'ticketlab_scenario': '{"id": string, "title": string, "difficulty": "beginner"|"intermediate"|"advanced", "ticket_subject": string, "customer_opening_message": string, "solution_label": string, "facts": [string, ...]}',
-    'quiz': '{"id": string, "title": string, "questions": [{"id": string, "prompt": string, "choices": [string, ...], "correctAnswers": [integer, ...]}]}',
+    'bisectbot_mission': '''Return JSON with this exact shape:
+{"schemaVersion":1,"contentType":"bisectbot.trainingMission",
+ "mission":{"id":"<slug>","title":"<short ticket title>","customerReport":"<1-2 sentence customer-facing ticket description>"},
+ "quizzes":[{"id":"<slug>_q1","type":"multiple_choice","title":"<short title>","question":"<a question testing understanding of the source content>","choices":["<4 options>"],"correctAnswers":[<index of correct option>],"explanation":"<why the correct answer is correct>"}]}
+Include 3-5 quizzes if the source content supports it, each with a distinct question.''',
+    'ticketlab_scenario': '''Return JSON with this exact shape (it will be converted to YAML):
+{"schema_version":2,
+ "metadata":{"id":"<slug>","title":"<short title>","version":"0.1.0","author":"refinery-draft","provenance":{"created":"<ISO date>","source":"internal"},"difficulty":<1-5>,"tags":["<tags>"],"estimated_minutes":<int>},
+ "panel":{"adapter":"mock","min_version":"1.11"},
+ "ticket":{"subject":"<subject>","priority":"low|medium|high","customer":{"name":"<name>","persona":"<short persona description>"},"body":"<realistic customer message describing the problem, do not name the cause>"},
+ "environment":{"server":{"name":"<server name>","egg":"<game/service>","limits":{},"variables":{}}},
+ "fault":{"steps":[{"action":"<one of: set_variable,set_startup_command,set_limits,write_file,delete_file,start_server,stop_server,wait>","value":"<optional>","key":"<optional>","seconds":<optional int>}]},
+ "conversation":{"persona":"<same persona>","satisfaction_start":<0-100>,"hidden_facts":[{"id":"<slug>","fact":"<a fact the customer knows but won't volunteer>","reveal_keywords":["<keywords that reveal it>"]}]},
+ "verification":{"solutions":[{"id":"<slug>","grade":"full","score":100,"label":"<short label>","assertions":[{"type":"server_state","operator":"equals","expected":"running"}],"feedback":"<why this is the right fix>"}]},
+ "scoring":{"max_verify_attempts":5,"target_minutes":<int>},
+ "teardown":{"policy":"on_pass_or_expiry","expiry_minutes":60}}
+Base the fault and the fix on the actual troubleshooting steps described in the source content.''',
+    'quiz': '''Return JSON with this exact shape:
+{"questionType":"multiple_choice","prompt":"<a question testing understanding of the source content>","choices":["<4 options>"],"correctAnswers":[<index of correct option>],"explanation":"<why the correct answer is correct>"}''',
 }
+
 
 def _stub_bisectbot_mission(doc: SourceDoc) -> Dict[str, Any]:
     slug = slugify(doc.title)
-    return {'id': slug, 'title': doc.title, 'topic': slug, 'difficulty': 2, 'estimated_minutes': 5,
-            'briefing': f'[NEEDS AUTHOR REVIEW] Draft mission briefing generated without AI assistance from source doc "{doc.title}".',
-            'quizzes': [{'id': f'{slug}__q1', 'prompt': '[NEEDS AUTHOR REVIEW] Write a real question about this topic.',
-                         'choices': ['[NEEDS AUTHOR REVIEW] option A', 'option B', 'option C', 'option D'], 'correctAnswers': [0]}]}
+    return {
+        'schemaVersion': 1,
+        'contentType': 'bisectbot.trainingMission',
+        'mission': {
+            'id': f'refinery_{slug}',
+            'title': f'[NEEDS AUTHOR REVIEW] {doc.title}',
+            'customerReport': f'Training simulation loaded: {doc.title}.',
+        },
+        'quizzes': [{
+            'id': f'{slug}_q1',
+            'type': 'multiple_choice',
+            'title': '[NEEDS AUTHOR REVIEW]',
+            'question': f'[NEEDS AUTHOR REVIEW] Write a real question sourced from: {doc.title}',
+            'choices': ['[NEEDS AUTHOR REVIEW] option A', 'option B', 'option C', 'option D'],
+            'correctAnswers': [0],
+            'explanation': '[NEEDS AUTHOR REVIEW] explanation not yet written.',
+        }],
+    }
+
 
 def _stub_ticketlab_scenario(doc: SourceDoc) -> Dict[str, Any]:
     slug = slugify(doc.title)
-    return {'id': slug, 'title': doc.title, 'difficulty': 'intermediate',
-            'ticket_subject': f'[NEEDS AUTHOR REVIEW] {doc.title}',
-            'customer_opening_message': '[NEEDS AUTHOR REVIEW] Draft customer message generated without AI assistance.',
-            'solution_label': slug, 'facts': ['[NEEDS AUTHOR REVIEW] key fact from source']}
+    return {
+        'schema_version': 2,
+        'metadata': {
+            'id': slug,
+            'title': f'[NEEDS AUTHOR REVIEW] {doc.title}',
+            'version': '0.1.0',
+            'author': 'refinery-draft',
+            'provenance': {'created': dt.datetime.now(dt.timezone.utc).date().isoformat(), 'source': 'internal'},
+            'difficulty': 2,
+            'tags': ['needs-review'],
+            'estimated_minutes': 10,
+        },
+        'panel': {'adapter': 'mock', 'min_version': '1.11'},
+        'ticket': {
+            'subject': f'[NEEDS AUTHOR REVIEW] {doc.title}',
+            'priority': 'medium',
+            'customer': {'name': 'Customer', 'persona': 'neutral'},
+            'body': '[NEEDS AUTHOR REVIEW] Write a realistic customer message here.',
+        },
+        'environment': {'server': {'name': 'draft-server', 'egg': 'unknown', 'limits': {}, 'variables': {}}},
+        'fault': {'steps': [{'action': 'wait', 'seconds': 1}]},
+        'conversation': {'persona': 'neutral', 'satisfaction_start': 50, 'hidden_facts': []},
+        'verification': {
+            'solutions': [{
+                'id': 'needs-review',
+                'grade': 'full',
+                'score': 100,
+                'label': '[NEEDS AUTHOR REVIEW]',
+                'assertions': [{'type': 'server_state', 'operator': 'equals', 'expected': 'running'}],
+                'feedback': '[NEEDS AUTHOR REVIEW] feedback not yet written.',
+            }],
+        },
+        'scoring': {'max_verify_attempts': 5, 'target_minutes': 10},
+        'teardown': {'policy': 'on_pass_or_expiry', 'expiry_minutes': 60},
+    }
+
 
 def _stub_quiz(doc: SourceDoc) -> Dict[str, Any]:
-    slug = slugify(doc.title)
-    return {'id': slug, 'title': doc.title,
-            'questions': [{'id': f'{slug}__q1', 'prompt': '[NEEDS AUTHOR REVIEW] Write a real question about this topic.',
-                           'choices': ['[NEEDS AUTHOR REVIEW] option A', 'option B', 'option C', 'option D'], 'correctAnswers': [0]}]}
+    return {
+        'questionType': 'multiple_choice',
+        'prompt': f'[NEEDS AUTHOR REVIEW] Write a real question sourced from: {doc.title}',
+        'choices': ['[NEEDS AUTHOR REVIEW] option A', 'option B', 'option C', 'option D'],
+        'correctAnswers': [0],
+        'explanation': '[NEEDS AUTHOR REVIEW] explanation not yet written.',
+    }
 
-_STUB_BUILDERS = {'bisectbot_mission': _stub_bisectbot_mission, 'ticketlab_scenario': _stub_ticketlab_scenario, 'quiz': _stub_quiz}
-_TITLE_GETTERS = {t: (lambda a: a.get('title', '')) for t in TRAINING_ARTIFACT_TARGETS}
 
-def _valid_quiz_shape(q: Any) -> bool:
-    """True only if every correctAnswers index actually points at a real choice.
-    A shape-valid-but-out-of-range quiz (choices has 3 entries, correctAnswers has a 3)
-    has been observed from real Ollama output and will break every downstream
-    consumer's own stricter validator (e.g. BisectBot's TrainingMissionPackStore)."""
-    if not isinstance(q, dict): return False
-    choices, correct = q.get('choices'), q.get('correctAnswers')
-    if not isinstance(choices, list) or not choices: return False
-    if not isinstance(correct, list) or not correct: return False
+_STUB_BUILDERS = {
+    'bisectbot_mission': _stub_bisectbot_mission,
+    'ticketlab_scenario': _stub_ticketlab_scenario,
+    'quiz': _stub_quiz,
+}
+
+_TITLE_GETTERS = {
+    'bisectbot_mission': lambda a, doc: a.get('mission', {}).get('title') or f'Mission: {doc.title}',
+    'ticketlab_scenario': lambda a, doc: a.get('metadata', {}).get('title') or f'Scenario: {doc.title}',
+    'quiz': lambda a, doc: f'Quiz: {doc.title}',
+}
+
+
+def _valid_quiz_shape(q: Dict[str, Any]) -> bool:
+    """Shared by bisectbot_mission (per-quiz) and quiz (top-level) checks.
+    Catches the real failure mode seen from live Ollama output: a
+    syntactically fine correctAnswers list whose index is out of range for
+    the choices actually returned (e.g. 4 choices asked for, model only gave
+    3, but still pointed at index 3) - BisectBot's own validatePack() rejects
+    this, so it must be caught here or the deterministic stub should be used
+    instead."""
+    choices = q.get('choices')
+    correct = q.get('correctAnswers')
+    if not (isinstance(choices, list) and len(choices) >= 2):
+        return False
+    if not (isinstance(correct, list) and len(correct) > 0):
+        return False
     return all(isinstance(i, int) and 0 <= i < len(choices) for i in correct)
 
-def validate_training_artifact(artifact_type: str, data: Any) -> Tuple[bool, str]:
-    """Plain shape check - no BisectBot/TicketLab schema code is imported here. Keeps
-    the refinery independent of its downstream consumers' own code."""
-    if artifact_type not in TRAINING_ARTIFACT_TARGETS: return False, f'unknown artifact_type {artifact_type}'
-    if not isinstance(data, dict): return False, 'not a JSON object'
-    if not data.get('id') or not data.get('title'): return False, 'missing id/title'
-    if artifact_type == 'bisectbot_mission':
-        if not data.get('briefing'): return False, 'missing briefing'
-        quizzes = data.get('quizzes')
-        if not isinstance(quizzes, list) or not quizzes: return False, 'missing quizzes'
-        if not all(_valid_quiz_shape(q) for q in quizzes): return False, 'malformed quiz (out-of-range correctAnswers or empty choices)'
-    elif artifact_type == 'ticketlab_scenario':
-        if not data.get('ticket_subject') or not data.get('customer_opening_message'): return False, 'missing ticket_subject/customer_opening_message'
-        if not data.get('solution_label'): return False, 'missing solution_label'
-    elif artifact_type == 'quiz':
-        questions = data.get('questions')
-        if not isinstance(questions, list) or not questions: return False, 'missing questions'
-        if not all(_valid_quiz_shape(q) for q in questions): return False, 'malformed question (out-of-range correctAnswers or empty choices)'
-    return True, ''
 
-def transform_to_training_artifact(doc: SourceDoc, c: Classification, artifact_type: str, model: Optional[str]=None, url='http://localhost:11434/api/generate', context_text: str='') -> SourceDoc:
-    label = _TRAINING_TARGET_LABELS.get(artifact_type, artifact_type)
-    schema = _TRAINING_TARGET_SCHEMAS.get(artifact_type, '{}')
-    data = None
+def validate_training_artifact(target_format: str, artifact: Dict[str, Any]) -> bool:
+    """Plain shape check, not a full schema validation - deliberately not
+    importing ticketlab's or BisectBot's schema types (separate products).
+    Ollama's 'format':'json' constrains syntax, not our field shape, so this
+    is what decides whether the AI draft is trustworthy or the deterministic
+    stub is used instead."""
+    try:
+        if target_format == 'bisectbot_mission':
+            mission = artifact.get('mission', {})
+            quizzes = artifact.get('quizzes')
+            return bool(mission.get('id')) and bool(mission.get('title')) and isinstance(quizzes, list) and len(quizzes) > 0 and all(
+                q.get('question') and _valid_quiz_shape(q) for q in quizzes
+            )
+        if target_format == 'ticketlab_scenario':
+            fault_steps = artifact.get('fault', {}).get('steps')
+            solutions = artifact.get('verification', {}).get('solutions')
+            return bool(artifact.get('metadata', {}).get('id')) and bool(artifact.get('ticket', {}).get('subject')) and isinstance(fault_steps, list) and len(fault_steps) > 0 and isinstance(solutions, list) and len(solutions) > 0
+        if target_format == 'quiz':
+            return bool(artifact.get('prompt')) and _valid_quiz_shape(artifact)
+    except (AttributeError, TypeError):
+        return False
+    return False
+
+
+def transform_to_training_artifact(doc: SourceDoc, c: Classification, target_format: str, model: Optional[str] = None, url='http://localhost:11434/api/generate') -> SourceDoc:
+    if target_format not in _TRAINING_TARGET_SCHEMAS:
+        raise ValueError(f'unknown training artifact target: {target_format}')
+
+    artifact: Optional[Dict[str, Any]] = None
     if model:
-        prompt = f'''Produce ONE original {label} as a single JSON object, based on the SOURCE below.
-
-Treat the SOURCE as evidence, not truth to copy - extract the underlying facts, workflow, and troubleshooting steps, then write fresh original wording for VainAsherStudios training content. Remove source company names and any competitor/employer-specific phrasing.
-
-Return ONLY a JSON object shaped like this (types are illustrative - use real content):
-{schema}
-
-VAINASHERSTUDIOS_CONTEXT (higher authority than the source):
-{context_text[:4000] if context_text else 'No additional VAS context pack supplied.'}
-
+        prompt = f'''Create {_TRAINING_TARGET_LABELS[target_format]} from the source content below.
+{_TRAINING_TARGET_SCHEMAS[target_format]}
+Do not copy the source wording verbatim - write an original question/scenario grounded in the source's facts.
 SOURCE_TITLE: {doc.title}
 SOURCE_CONTENT:
-{doc.content[:6000]}
+{doc.content[:14000]}'''
+        candidate = ollama_json(prompt, model, url)
+        if candidate and validate_training_artifact(target_format, candidate):
+            artifact = candidate
 
-Return ONLY the JSON object, no surrounding prose.'''
-        data = ollama_json(prompt, model, url)
-    ok = False
-    if data is not None:
-        ok, _reason = validate_training_artifact(artifact_type, data)
-    if not ok:
-        data = _STUB_BUILDERS[artifact_type](doc)
-    title = _TITLE_GETTERS.get(artifact_type, lambda a: doc.title)(data) or f'{label} - {doc.title}'
-    content = json.dumps(data, ensure_ascii=False, indent=2)
-    return SourceDoc(title=title, content=content, source='vainasherstudios_transform', source_id='', source_url='',
-                      raw_metadata={'transformed_from': doc.source_id, 'source_org': c.source_org,
-                                    'target_type': f'rewrite_into_{artifact_type}', 'artifact_type': artifact_type})
+    if artifact is None:
+        artifact = _STUB_BUILDERS[target_format](doc)
+
+    artifact_format = 'yaml' if target_format == 'ticketlab_scenario' else 'json'
+    content = (
+        yaml.safe_dump(artifact, sort_keys=False, allow_unicode=True)
+        if artifact_format == 'yaml'
+        else json.dumps(artifact, indent=2, ensure_ascii=False)
+    )
+    title = _TITLE_GETTERS[target_format](artifact, doc)
+
+    return SourceDoc(
+        title=title,
+        content=content,
+        source='vainasherstudios_transform',
+        raw_metadata={
+            'transformed_from': doc.source_id,
+            'source_org': c.source_org,
+            'target_type': target_format,
+            'artifact_format': artifact_format,
+        },
+    )
+
 
 def merge_ai_classification(base: Classification, ai: Optional[Dict[str,Any]], taxonomy: Dict[str,List[str]]) -> Classification:
     if not ai: return base
