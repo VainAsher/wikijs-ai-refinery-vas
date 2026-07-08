@@ -154,7 +154,9 @@ def test_training_artifact_transform_review_and_export(client, tmp_path):
     files = list(Path(body['folder']).glob('*.json'))
     assert files, 'expected at least one exported quiz JSON file'
     contents = [json.loads(f.read_text(encoding='utf-8')) for f in files]
-    assert all('questions' in c for c in contents)  # only the quiz draft, never the raw source doc
+    # only the quiz draft, never the raw source doc - and in the exact
+    # standalone-quiz shape downstream consumers expect
+    assert all(c.get('questionType') == 'multiple_choice' and 'choices' in c for c in contents)
 
 
 def test_export_training_rejects_unknown_artifact_type(client):
