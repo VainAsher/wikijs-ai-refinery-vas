@@ -3,6 +3,14 @@ import dataclasses, datetime as dt, json, os, re
 from typing import Any, Dict, List, Optional, Tuple
 import requests, yaml
 
+# Instance identity (D13/D15): a second stamped instance (e.g. the training
+# refinery) must be de-brandable without a fork - UI labels, generated draft
+# titles, and generation prompts all derive from these. Defaults preserve
+# the original VAS identity exactly.
+ORG_TAG = os.getenv('REFINERY_ORG_TAG', 'VAS')
+ORG_NAME = os.getenv('REFINERY_ORG_NAME', 'VainAsherStudios')
+ORG_LINE = os.getenv('REFINERY_ORG_LINE', 'VainAsherStudios services (hosting, web development, managed IT, business email, AI workflows, gaming community ops) and reference the VAS managed stack/tools from the context where relevant')
+
 DEFAULT_TAXONOMY = {
  'doc_types':['sop','runbook','policy','how_to','troubleshooting','faq','customer_template','internal_note','architecture','iac_reference','service_overview','incident_report','postmortem','checklist','training','glossary','decision_record','draft','moderation_playbook','training_module','lesson_plan','content_script','social_post_template','community_announcement','incident_response','admin_guide','stream_outline','discord_staff_guide','bisectbot_mission','ticketlab_scenario','quiz','unknown'],
  'audiences':['public','customer','internal','admin_only','private','community_member','moderator','admin','trainee','content_audience','unknown'],
@@ -69,7 +77,7 @@ class Classification:
     brand_score: int = -1   # 0-100 brand-compliance score; -1 = not scored yet
     reasons: List[str] = dataclasses.field(default_factory=list)
     # VainAsherStudios refinery upgrade
-    business_owner: str = 'VainAsherStudios'
+    business_owner: str = ORG_NAME
     source_org: str = 'unknown'
     source_role: str = 'imported_source'
     reuse_policy: str = 'rewrite_required'
@@ -366,7 +374,7 @@ def deterministic_classify(doc: SourceDoc, taxonomy: Dict[str,List[str]]) -> Cla
     if len(ranked)>1:
         c.reasons.append('Service candidates (by keyword hits): '+', '.join(f'{s}:{n}' for s,n in ranked[:4]))
     if c.source_role=='vendor_documentation':
-        c.reasons.append('Upstream tool documentation: adapt into VAS-owned runbooks/SOPs, do not republish verbatim, and check the upstream licence.')
+        c.reasons.append('Upstream tool documentation: adapt into owned runbooks/SOPs, do not republish verbatim, and check the upstream licence.')
         if 'vendor-docs' not in c.tags: c.tags.append('vendor-docs')
     if any(w in text for w in ['restore','restart','rotate','rollback','rebuild','incident','outage']): c.doc_type='runbook'
     elif any(w in text for w in ['policy','acceptable use','retention','gdpr']): c.doc_type='policy'
@@ -565,7 +573,7 @@ def dials_directives(d: Dict[str, Any]) -> str:
 # Brand profile + compliance scoring  (adapted from ForgeOS brand_scorer)
 # ---------------------------------------------------------------------------
 DEFAULT_BRAND: Dict[str, Any] = {
-    'name': 'VainAsherStudios',
+    'name': ORG_NAME,
     'tone_guide': ('Noir, technical, human, honest — hope beneath the cynicism. Clarity first for '
                    'operational docs (SOPs, runbooks, customer guides); full brand voice for community, '
                    'content, and creative work.'),
@@ -649,14 +657,14 @@ def extract_facts(doc: SourceDoc, model: Optional[str]=None, url='http://localho
 def derive_content_gaps(coverage: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Turn per-service coverage counts into prioritised content-gap suggestions
     (adapted from ForgeOS's gap analyzer, simplified to what the store can answer):
-      - rewrite_backlog: reference docs exist but no VAS-owned draft (highest value)
+      - rewrite_backlog: reference docs exist but no owned draft (highest value)
       - no_coverage:     a service with zero docs (worth creating)
       - shallow:         1-2 docs only (thin)."""
     gaps: List[Dict[str, Any]] = []
     for c in coverage:
         if c['owned'] == 0 and c['reference'] > 0:
             gaps.append({'service': c['service'], 'kind': 'rewrite_backlog', 'priority': 3,
-                         'note': f"{c['reference']} reference doc(s) but no VAS-owned draft — prime rewrite candidate."})
+                         'note': f"{c['reference']} reference doc(s) but no owned draft — prime rewrite candidate."})
         elif c['total'] == 0:
             gaps.append({'service': c['service'], 'kind': 'no_coverage', 'priority': 2,
                          'note': 'No documents yet — candidate to create from scratch.'})
@@ -686,53 +694,53 @@ def load_brand(path) -> Dict[str, Any]:
 
 def transform_to_vas(doc: SourceDoc, c: Classification, target_type: str, model: Optional[str]=None, url='http://localhost:11434/api/generate', context_text: str='', dials: Optional[Dict[str, Any]]=None) -> SourceDoc:
     target_labels={'rewrite_into_sop':'SOP','rewrite_into_runbook':'runbook','rewrite_into_customer_guide':'customer guide','rewrite_into_support_template':'support reply template','rewrite_into_policy':'policy','rewrite_into_training':'training document','rewrite_into_moderation_playbook':'moderation playbook','rewrite_into_admin_guide':'game/community admin guide','rewrite_into_lesson_plan':'moderator/admin lesson plan','rewrite_into_youtube_script':'YouTube training script','rewrite_into_linkedin_post':'LinkedIn educational post','rewrite_into_twitch_outline':'Twitch stream segment outline','rewrite_into_discord_staff_guide':'Discord staff guide','rewrite_into_community_announcement':'community announcement'}
-    target=target_labels.get(target_type,'VainAsherStudios document')
+    target=target_labels.get(target_type,f'{ORG_NAME} document')
     # Generate Markdown DIRECTLY (not via JSON mode, which crushes output length). The
     # key directive is repeated after the source so the model weights it on recency.
-    prompt=f'''Write an original, detailed VainAsherStudios {target} in Markdown, based on the SOURCE below.
+    prompt=f'''Write an original, detailed {ORG_NAME} {target} in Markdown, based on the SOURCE below.
 
-Treat the VAINASHERSTUDIOS_CONTEXT as HIGHER AUTHORITY than the source. Rules:
+Treat the ORG_CONTEXT as HIGHER AUTHORITY than the source. Rules:
 - Do not copy source wording or competitor/employer-specific phrasing; extract the principles, workflow, risks, checks, and operational patterns.
-- Adapt for VainAsherStudios services (hosting, web development, managed IT, business email, AI workflows, gaming community ops) and reference the VAS managed stack/tools from the context where relevant.
+- Adapt for {ORG_LINE}.
 - For moderation/admin outputs: calm, evidence-led moderation, proportional enforcement, escalation paths, safeguarding, clear staff wording.
 - Remove source company names, prices, and platform-specific policies unless needed as an assumption.
-- Write in the VainAsherStudios voice. Be thorough and well-structured: include a title, a short intro, prerequisites, a step-by-step procedure, verification/checks, risks, and escalation where appropriate.
+- Write in the {ORG_NAME} voice. Be thorough and well-structured: include a title, a short intro, prerequisites, a step-by-step procedure, verification/checks, risks, and escalation where appropriate.
 - End with a "## Assumptions for Review" section listing anything you assumed or any source/context conflicts.
 
 VARIATION DIRECTIVES (tune voice, length, and structure):
 {dials_directives(normalise_dials(dials))}
 
-VAINASHERSTUDIOS_CONTEXT (higher authority than the source):
-{context_text[:7000] if context_text else 'No additional VAS context pack supplied.'}
+ORG_CONTEXT (higher authority than the source):
+{context_text[:7000] if context_text else 'No additional context pack supplied.'}
 
 SOURCE_ORG: {c.source_org}
 SOURCE_TITLE: {doc.title}
 SOURCE_CONTENT:
 {doc.content[:8000]}
 
-Now write the complete Markdown {target}. Start with a single "# " title line, use the VAS context as higher authority, and be detailed.'''
+Now write the complete Markdown {target}. Start with a single "# " title line, use the ORG_CONTEXT as higher authority, and be detailed.'''
     text = ollama_text(prompt, model, url) if model else None
     if text and len(text.strip()) >= 80:
         md=clean_markdown(text)
         # Title from the first H1 the model wrote, else a safe default.
-        title=next((l[2:].strip() for l in md.splitlines() if l.startswith('# ')), f'VAS Draft - {doc.title}')
+        title=next((l[2:].strip() for l in md.splitlines() if l.startswith('# ')), f'{ORG_TAG} Draft - {doc.title}')
         # Summary from the first real paragraph (not a heading/bullet).
-        summary=next((l.strip() for l in md.splitlines() if l.strip() and not l.lstrip().startswith(('#','-','*','>'))), f'Original VainAsherStudios {target} draft.')[:300]
+        summary=next((l.strip() for l in md.splitlines() if l.strip() and not l.lstrip().startswith(('#','-','*','>'))), f'Original {ORG_NAME} {target} draft.')[:300]
         if not md.lstrip().startswith('# '): md=f'# {title}\n\n{md}'
         return SourceDoc(title=title, content=md.strip(), source='vainasherstudios_transform', source_id='', source_url='', raw_metadata={'transformed_from':doc.source_id,'source_org':c.source_org,'target_type':target_type,'summary':summary})
     # safe deterministic fallback
-    title=f'VAS Draft - {doc.title}'
+    title=f'{ORG_TAG} Draft - {doc.title}'
     md=f'''# {title}
 
-> Draft generated for human review. This is an original VainAsherStudios working draft based on extracted operational patterns, not a republished source document.
+> Draft generated for human review. This is an original {ORG_NAME} working draft based on extracted operational patterns, not a republished source document.
 
 ## Purpose
 
-Create a VainAsherStudios {target} for the relevant audience: clients, moderators, admins, community members, or content viewers. VAS covers website hosting, website development, managed IT, business email, AI workflows, and gaming community operations/training.
+Create a {ORG_NAME} {target} for the relevant audience: clients, staff, trainees, moderators, or community members.
 
-## VainAsherStudios Context Used
+## {ORG_NAME} Context Used
 
-No AI model/context-aware rewrite was supplied for this fallback draft. Before approval, add relevant VAS context such as brand voice, service catalogue, IaC patterns, supported tools, privacy rules, and client support boundaries.
+No AI model/context-aware rewrite was supplied for this fallback draft. Before approval, add relevant {ORG_TAG} context such as brand voice, service catalogue, IaC patterns, supported tools, privacy rules, and client support boundaries.
 
 ## Extracted Operational Pattern
 
@@ -743,7 +751,7 @@ No AI model/context-aware rewrite was supplied for this fallback draft. Before a
 - Explain progress to the client in plain English.
 - Escalate or schedule deeper work when the issue requires privileged access, destructive changes, or wider business impact.
 
-## VainAsherStudios Procedure
+## {ORG_NAME} Procedure
 
 1. Confirm the client, service, and urgency.
 2. Check whether this is hosting, website, email, managed IT, or automation related.

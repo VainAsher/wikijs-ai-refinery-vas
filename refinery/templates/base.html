@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>VAS Wiki Refinery</title>
+  <title>{{ instance_name }}</title>
   <!-- Apply saved theme before first paint to avoid a flash of the wrong theme. -->
   <script>(function(){try{var t=localStorage.getItem('vas-theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
   <style>
@@ -150,7 +150,7 @@
 <body>
 <header>
   <nav class="nav">
-    <span class="brand"><span class="dot"></span>VAS Refinery</span>
+    <span class="brand"><span class="dot"></span>{{ instance_name }}</span>
     <a class="tab" href="/">Docs</a>
     <a class="tab" href="/bulk">Bulk</a>
     <a class="tab" href="/connectors">Connectors</a>

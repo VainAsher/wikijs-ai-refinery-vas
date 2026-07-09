@@ -4,7 +4,7 @@
 <div class="pagehead">
   <div>
     <h2>In-flight documents</h2>
-    <p class="muted">Filter the queue, open a doc to edit and classify it, transform reference docs into VAS drafts, then approve or publish. New here? Read the <a href="/guide">guide</a>.</p>
+    <p class="muted">Filter the queue, open a doc to edit and classify it, transform reference docs into {{ org_tag }} drafts, then approve or publish. New here? Read the <a href="/guide">guide</a>.</p>
   </div>
   <div class="actions"><a class="button" href="/bulk">Bulk import</a><a class="button secondary" href="/connectors">Connectors</a></div>
 </div>
@@ -14,7 +14,7 @@
   <a class="stat" href="/?page_size={{ page_size }}"><span class="n">{{ counts.total or 0 }}</span><span class="l">Total</span></a>
   <a class="stat" href="/?status=needs_review&page_size={{ page_size }}"><span class="n">{{ counts.needs_review or 0 }}</span><span class="l">Needs review</span></a>
   <a class="stat" href="/?status=reviewed&page_size={{ page_size }}"><span class="n">{{ counts.reviewed or 0 }}</span><span class="l">Reviewed</span></a>
-  <a class="stat" href="/?source_org=vainasherstudios&page_size={{ page_size }}"><span class="n">{{ counts['source_org:vainasherstudios'] or 0 }}</span><span class="l">VAS drafts</span></a>
+  <a class="stat" href="/?source_org=vainasherstudios&page_size={{ page_size }}"><span class="n">{{ counts['source_org:vainasherstudios'] or 0 }}</span><span class="l">{{ org_tag }} drafts</span></a>
   <a class="stat" href="/?rewrite_status=needs_rewrite&page_size={{ page_size }}"><span class="n">{{ counts['rewrite_status:needs_rewrite'] or 0 }}</span><span class="l">Needs rewrite</span></a>
   <a class="stat" href="/?page_size={{ page_size }}"><span class="n">{{ counts.published or 0 }}</span><span class="l">Published</span></a>
 </div>

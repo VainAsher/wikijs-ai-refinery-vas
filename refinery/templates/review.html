@@ -78,10 +78,10 @@
   <h3>Actions</h3>
   <div class="actions">
     <form method="post" action="/docs/{{ row.id }}/quick"><input type="hidden" name="action" value="approve"><button data-tip="Mark reviewed; promotes imported_unreviewed → approved.">Approve</button></form>
-    <form method="post" action="/docs/{{ row.id }}/quick"><input type="hidden" name="action" value="canonical"><button class="secondary" data-tip="Mark as the VAS source of truth (reviewed + canonical).">Mark canonical</button></form>
+    <form method="post" action="/docs/{{ row.id }}/quick"><input type="hidden" name="action" value="canonical"><button class="secondary" data-tip="Mark as the {{ org_tag }} source of truth (reviewed + canonical).">Mark canonical</button></form>
     <form method="post" action="/docs/{{ row.id }}/quick"><input type="hidden" name="action" value="reject"><button class="ghost" data-tip="Archive this doc and stop the rewrite.">Reject / archive</button></form>
     <form method="post" action="/docs/{{ row.id }}/publish"><button class="secondary" data-tip="Push to Wiki.js. Configure credentials in Config first.">Publish to Wiki.js</button></form>
-    <form method="post" action="/docs/{{ row.id }}/brand-score"><button class="ghost" data-tip="Score the current content against the VAS brand profile (data/brand.yaml).">Check brand voice</button></form>
+    <form method="post" action="/docs/{{ row.id }}/brand-score"><button class="ghost" data-tip="Score the current content against this instance's brand profile (data/brand.yaml).">Check brand voice</button></form>
     {% if c.brand_score >= 0 %}<span class="pill {% if c.brand_score>=80 %}ok{% elif c.brand_score>=60 %}warn{% else %}danger{% endif %}" data-tip="Brand-compliance score (avoided language + tone). Re-check after edits.">brand {{ c.brand_score }}/100</span>{% endif %}
   </div>
   {% if row.publish_message %}<p class="notice {% if row.published %}ok{% else %}warn{% endif %}" style="margin-top:12px">{{ row.publish_message }}</p>{% endif %}
@@ -118,7 +118,7 @@
 <details class="section">
   <summary>Run enrichment pipeline <span class="sub">— multi-pass: clean → fact-find → draft → voice/brand/audience/SEO → gates</span></summary>
   <div class="body">
-    <p class="muted small">Runs this source through a bounded multi-pass pipeline and creates a governed VAS draft (needs review, never auto-published). Each pass is gated by deterministic safety checks. It runs in the background — watch the progress tray; it links to the draft when done.</p>
+    <p class="muted small">Runs this source through a bounded multi-pass pipeline and creates a governed {{ org_tag }} draft (needs review, never auto-published). Each pass is gated by deterministic safety checks. It runs in the background — watch the progress tray; it links to the draft when done.</p>
     <form method="post" action="/docs/{{ row.id }}/run-pipeline">
       <div class="row">
         <div><label>Pipeline</label><select name="pipeline_id">{% for p in pipelines %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></div>
@@ -138,12 +138,12 @@
 </details>
 {% endif %}
 <details class="section">
-  <summary>Transform into a VAS-owned draft <span class="sub">— creates a new editable draft, doesn't publish</span></summary>
+  <summary>Transform into a {{ org_tag }}-owned draft <span class="sub">— creates a new editable draft, doesn't publish</span></summary>
   <div class="body">
-    <p class="muted small">Generates an original VAS draft from this reference doc and adds it to the queue. It never marks this source canonical. Add an Ollama model for a richer rewrite, or leave blank for a safe template.</p>
+    <p class="muted small">Generates an original {{ org_tag }} draft from this reference doc and adds it to the queue. It never marks this source canonical. Add an Ollama model for a richer rewrite, or leave blank for a safe template.</p>
     <form method="post" action="/docs/{{ row.id }}/transform">
       <div class="row">
-        <div><label>Target <span class="help" tabindex="0" data-tip="What kind of VAS document to produce (SOP, runbook, moderation playbook, etc.).">?</span></label><select name="target_action">{% for x in taxonomy.adaptation_actions %}{% if x.startswith('rewrite_into_') %}<option value="{{x}}">{{x}}</option>{% endif %}{% endfor %}</select></div>
+        <div><label>Target <span class="help" tabindex="0" data-tip="What kind of document to produce — the list follows this instance's taxonomy.">?</span></label><select name="target_action">{% for x in taxonomy.adaptation_actions %}{% if x.startswith('rewrite_into_') %}<option value="{{x}}">{{x}}</option>{% endif %}{% endfor %}</select></div>
         <div><label>Ollama model <span class="muted small">optional</span></label><input name="ollama_model" placeholder="mistral:latest (blank = template)"></div>
         <div style="flex:none"><label>&nbsp;</label><button data-tip="Generate the draft directly from the source.">Generate draft</button></div>
         <div style="flex:none"><label>&nbsp;</label><button class="secondary" formaction="/docs/{{ row.id }}/transform/prepare" data-tip="Extract and verify key facts first, then draft only from what you approve.">Prepare with fact gate</button></div>
@@ -164,7 +164,7 @@
           </div>
         </div>
       </details>
-      <label>VAS context packs to include <span class="help" tabindex="0" data-tip="Injected into the prompt as higher authority than the source. Manage them under Context.">?</span></label>
+      <label>{{ org_tag }} context packs to include <span class="help" tabindex="0" data-tip="Injected into the prompt as higher authority than the source. Manage them under Context.">?</span></label>
       <div class="grid">
         {% for pack in context_packs %}
         <label class="inline" style="border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--inset)"><input type="checkbox" name="context_pack" value="{{ pack.slug }}" style="width:auto" checked> <span><strong>{{ pack.title }}</strong><br><span class="muted small">{{ pack.filename }}</span></span></label>
