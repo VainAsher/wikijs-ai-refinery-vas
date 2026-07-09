@@ -21,7 +21,7 @@ RawFact) or 'source' (donor shape) — both accepted.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 from refinery.websource import domain_allowed
 
@@ -32,6 +32,15 @@ class CitationRecord:
     source_name: str
     local_path: Optional[str] = None
     url: Optional[str] = None
+
+
+@dataclass
+class FactBlock:
+    """A single attributed claim (donor: forgeos schemas.py L22-27, pydantic ->
+    stdlib dataclass per the CitationRecord precedent). citation_id refers to a
+    minted CitationRecord.id (SRC-###)."""
+    claim: str
+    citation_id: str
 
 
 def _get(fact, key: str, default=''):
@@ -74,3 +83,103 @@ def mint_citations(facts: Sequence, blacklist: Sequence[str],
             continue
         minted.append(to_citation(len(minted) + 1, fact))
     return minted
+
+
+# ---------------------------------------------------------------------------
+# FG-H3: source attribution + the Auditor validation discipline.
+# ---------------------------------------------------------------------------
+
+def _local_source_fact(doc) -> dict:
+    """Render the local source doc as a local-kind fact so it mints a citation
+    through the same mint_citations boundary as web facts. The location lands
+    under 'source' (donor RawFact shape) -> CitationRecord.local_path."""
+    source_id = getattr(doc, 'source_id', '') or ''
+    location = f'doc:{source_id}' if source_id else (getattr(doc, 'source', '') or 'local')
+    return {'title': getattr(doc, 'title', '') or 'Local source',
+            'content': getattr(doc, 'content', '') or '',
+            'kind': 'local', 'source': location}
+
+
+def attribute_facts(doc, web_facts: Sequence = (), blacklist: Sequence[str] = (),
+                    allowlist: Sequence[str] = (), model: Optional[str] = None,
+                    ollama_url: str = 'http://localhost:11434/api/generate',
+                    local_claims: Optional[Sequence[str]] = None,
+                    ) -> Tuple[List[FactBlock], List[CitationRecord]]:
+    """Extract claims WITH source attribution (donor Auditor, agents.py L128-192,
+    adapted to the sync llm-optional extract_facts idiom: deterministic when
+    model is None).
+
+    The local source doc mints SRC-001 (local kind); permitted web facts mint
+    sequential url-kind citations. ALL records come from mint_citations, so the
+    terminal domain guard applies — a blocked-domain fact never mints and never
+    receives claims. Every returned FactBlock cites a minted citation.
+
+    ``local_claims`` lets a caller that already ran extract_facts reuse those
+    claims instead of extracting twice.
+    """
+    from refinery.core import extract_facts  # deferred: keep module deps one-way
+
+    facts = [_local_source_fact(doc)] + list(web_facts or [])
+    minted = mint_citations(facts, blacklist, allowlist)
+
+    fact_blocks: List[FactBlock] = []
+    k = 0  # cursor into minted (mint_citations preserves fact order)
+    for fact in facts:
+        kind = _get(fact, 'kind', 'url') or 'url'
+        if kind != 'local' and not domain_allowed(
+                _fact_location(fact), blacklist, allowlist):
+            continue  # not minted by the terminal guard -> may not be cited
+        cit = minted[k]
+        k += 1
+        if kind == 'local':
+            claims = list(local_claims) if local_claims is not None else \
+                extract_facts(doc, model, ollama_url).get('facts', [])
+        else:
+            # Deterministic attribution: the fact's own content is the claim
+            # source, bound to ITS citation (donor Auditor digest semantics).
+            content = str(_get(fact, 'content') or '').strip()
+            claims = [content] if content else []
+        fact_blocks.extend(FactBlock(claim=str(c).strip(), citation_id=cit.id)
+                           for c in claims if str(c).strip())
+    return fact_blocks, minted
+
+
+def _block_id(fb) -> str:
+    return _get(fb, 'citation_id', '') or ''
+
+
+def _record_id(c) -> str:
+    return _get(c, 'id', '') or ''
+
+
+def validate_claims(fact_blocks: Sequence, citations: Sequence) -> Tuple[list, list]:
+    """Auditor discipline (donor agents.py L165-181): a claim is VERIFIED only if
+    its citation_id exists in the minted set; everything else is returned in the
+    rejected list — flagged for reviewers, never silently kept or dropped.
+    Accepts FactBlock/CitationRecord objects or their asdict() dicts."""
+    valid_ids = {_record_id(c) for c in citations}
+    verified = [fb for fb in fact_blocks if _block_id(fb) in valid_ids]
+    rejected = [fb for fb in fact_blocks if _block_id(fb) not in valid_ids]
+    return verified, rejected
+
+
+def build_verified_citations(fact_blocks: Sequence, citations: Sequence) -> List[dict]:
+    """verified_citations block (donor exporter.py build_frontmatter L36-58):
+    only citations referenced by VALIDATED claims, as JSON-serialisable dicts of
+    {id, source_name, url|local_path}. The donor's ``or citations`` fallback is
+    deliberately NOT ported — an unreferenced source is not verified."""
+    verified, _ = validate_claims(fact_blocks, citations)
+    used_ids = {_block_id(fb) for fb in verified}
+    block: List[dict] = []
+    for c in citations:
+        if _record_id(c) not in used_ids:
+            continue
+        entry = {'id': _record_id(c), 'source_name': _get(c, 'source_name', '')}
+        local_path = _get(c, 'local_path', None)
+        url = _get(c, 'url', None)
+        if local_path:
+            entry['local_path'] = local_path
+        if url:
+            entry['url'] = url
+        block.append(entry)
+    return block

@@ -552,7 +552,7 @@ def pipeline_run_page(request:Request,run_id:int):
 @app.post('/docs/{doc_id}/run-pipeline')
 def run_doc_pipeline(doc_id:int,pipeline_id:str=Form(...),target_action:str=Form('rewrite_into_customer_guide'),
                      service:str=Form('unknown'),audience:str=Form('customer'),ollama_model:str=Form(''),
-                     deterministic:str=Form('')):
+                     deterministic:str=Form(''),use_web_sources:str=Form('')):
     tpls=pipeline_templates_map()
     if pipeline_id not in tpls:
         return RedirectResponse(f'/docs/{doc_id}?notice=Unknown+pipeline',status_code=303)
@@ -565,6 +565,7 @@ def run_doc_pipeline(doc_id:int,pipeline_id:str=Form(...),target_action:str=Form
         out=run_and_persist(STORE,cfg,source_doc_id=doc_id,taxonomy=TAXONOMY,brand=load_brand(BRAND_PATH),
                             model=model,ollama_url=SETTINGS.get('ollama_url'),target_action=target_action,
                             service=service,audience=audience,
+                            settings=SETTINGS,use_web_sources=bool(use_web_sources),
                             progress=lambda done,total,pid: job.advance(1,f'{done}/{total} · {pid}'))
         job.finish(f"{out['status']} → draft #{out['new_doc_id']} ({out['pass_count']} passes)",
                    href=f"/docs/{out['new_doc_id']}")

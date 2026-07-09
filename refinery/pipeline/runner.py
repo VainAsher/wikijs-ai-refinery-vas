@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Callable, List, Optional
 
+from refinery.citations import build_verified_citations
 from refinery.core import (
     Classification, SourceDoc, deterministic_classify, suggest_canonical_target,
 )
@@ -39,7 +40,11 @@ def _build_draft(state: PipelineState, deps: PassDeps) -> tuple:
                  f'VainAsherStudios {(state.target_action or "document").replace("rewrite_into_", "").replace("_", " ").title()}')
     draft = SourceDoc(title=title, content=md, source='vainasherstudios_pipeline', source_id='',
                       raw_metadata={'pipeline_generated': True, 'human_review_required': True,
-                                    'seo_metadata': state.seo_metadata, 'source_doc_ids': state.source_doc_ids})
+                                    'seo_metadata': state.seo_metadata, 'source_doc_ids': state.source_doc_ids,
+                                    # FG-H3: only citations referenced by VALIDATED claims
+                                    # (no "or all citations" fallback), like seo_metadata.
+                                    'verified_citations': build_verified_citations(
+                                        state.fact_blocks, state.citations)})
     c = deterministic_classify(draft, deps.taxonomy or {})
     # Deterministic governance for pipeline output — owned VAS draft, never canonical/safe.
     c.source_org = 'vainasherstudios'; c.source_role = 'owned'; c.reuse_policy = 'owned_original'
