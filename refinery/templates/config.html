@@ -13,7 +13,7 @@
 <div class="two">
   <div class="card">
     <h3>Settings</h3>
-    <form method="post" action="/config/save">
+    <form method="post" action="/config/save" id="config-form">
       <label>Ollama URL <span class="help" tabindex="0" data-tip="The /api/generate endpoint of your local Ollama server. Health/model lookups reuse its host.">?</span> <span class="muted small">({{ settings.ollama_url.source }})</span></label>
       <input name="ollama_url" value="{{ settings.ollama_url.value }}" placeholder="http://localhost:11434/api/generate">
       <p class="hint"><button type="submit" class="ghost" formaction="/config/discover" formmethod="post" style="width:auto;padding:5px 10px">Auto-detect Ollama</button> <span class="muted small">probes Docker &amp; localhost and fills the URL in.</span></p>
@@ -71,5 +71,37 @@
       <li>The model only affects AI classification and transform quality — governance/safety rules are deterministic.</li>
     </ul>
   </div>
+</div>
+
+{# Web sourcing card (FG-H5). Inputs belong to the main settings form above via the
+   form= attribute, so one Save posts everything — checkboxes always round-trip as
+   explicit true/false server-side, and the two list textareas are always-overwrite
+   (clearing them from here really clears them). #}
+<div class="card" style="margin-top:16px">
+  <h3>Web sourcing <span class="muted small">(opt-in — OFF by default; keeps Refinery offline-first)</span></h3>
+  <p class="muted small">When enabled, transforms/pipelines that also tick their own &ldquo;use web sources&rdquo; option may query the configured SearXNG instance for supporting sources. With the flag off, Refinery makes zero outbound web requests.</p>
+
+  <label>Enable web sourcing <span class="help" tabindex="0" data-tip="Master switch. Even when on, each run must additionally opt in via its 'use web sources' checkbox, and a SearXNG URL must be set.">?</span> <span class="muted small">({{ settings.web_sourcing_enabled.source }})</span></label>
+  <label class="small" style="font-weight:normal"><input type="checkbox" form="config-form" name="web_sourcing_enabled" value="true" {% if settings.web_sourcing_enabled.value|lower in ('1','true','yes','on') %}checked{% endif %}> allow web sourcing (per-run opt-in still required)</label>
+
+  <label>SearXNG URL <span class="help" tabindex="0" data-tip="Base URL of a SearXNG instance with the JSON API enabled. Start the bundled one with: docker compose --profile websearch up -d. Empty = feature stays inert even if enabled.">?</span> <span class="muted small">({{ settings.searxng_url.source }})</span></label>
+  <input form="config-form" name="searxng_url" value="{{ settings.searxng_url.value }}" placeholder="http://searxng:8080">
+
+  <label>Max sources per run <span class="muted small">({{ settings.web_sourcing_max_sources.source }})</span></label>
+  <input form="config-form" type="number" min="1" name="web_sourcing_max_sources" value="{{ settings.web_sourcing_max_sources.value }}">
+
+  <label>Results per keyword <span class="muted small">({{ settings.web_sourcing_results_per_keyword.source }})</span></label>
+  <input form="config-form" type="number" min="1" name="web_sourcing_results_per_keyword" value="{{ settings.web_sourcing_results_per_keyword.value }}">
+
+  <label>Domain blacklist <span class="help" tabindex="0" data-tip="One domain per line. These domains (and their subdomains) can never appear as a source or citation - filtered from queries AND results AND at the citation boundary.">?</span> <span class="muted small">({{ settings.web_sourcing_domain_blacklist.source }})</span></label>
+  <textarea form="config-form" name="web_sourcing_domain_blacklist" rows="3" placeholder="spam.example&#10;content-farm.example">{{ settings.web_sourcing_domain_blacklist.value }}</textarea>
+
+  <label>Domain allowlist <span class="help" tabindex="0" data-tip="Leave empty to allow all non-blacklisted domains. If filled, ONLY these domains are allowed (blacklist still wins on conflict).">?</span> <span class="muted small">({{ settings.web_sourcing_domain_allowlist.source }})</span></label>
+  <textarea form="config-form" name="web_sourcing_domain_allowlist" rows="3" placeholder="docs.example&#10;wiki.example">{{ settings.web_sourcing_domain_allowlist.value }}</textarea>
+
+  <label>Safe search <span class="muted small">({{ settings.web_sourcing_safe_search.source }})</span></label>
+  <label class="small" style="font-weight:normal"><input type="checkbox" form="config-form" name="web_sourcing_safe_search" value="true" {% if settings.web_sourcing_safe_search.value|lower in ('1','true','yes','on') %}checked{% endif %}> pass safesearch=1 to SearXNG</label>
+
+  <p class="hint muted small">Saved by the same <em>Save settings</em> button above. Unlike the token boxes, clearing a domain list here really clears it.</p>
 </div>
 {% endblock %}

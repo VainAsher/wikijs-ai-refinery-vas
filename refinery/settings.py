@@ -47,6 +47,17 @@ DEFAULTS: Dict[str, str] = {
     'wikijs_url':   '',
     'wikijs_token': '',
     'anthropic_api_key': '',
+    # --- Web sourcing (FG-H5) — opt-in, OFF by default so Refinery stays
+    # offline-first. All values stored as strings like every other key.
+    'web_sourcing_enabled': 'false',
+    'searxng_url': '',
+    'web_sourcing_max_sources': '6',
+    'web_sourcing_results_per_keyword': '3',
+    'web_sourcing_domain_blacklist': '',
+    'web_sourcing_domain_allowlist': '',
+    'web_sourcing_safe_search': 'true',
+    'web_sourcing_probe_url': 'https://1.1.1.1',
+    'web_sourcing_probe_timeout': '5.0',
 }
 ENV_MAP: Dict[str, str] = {
     'ollama_url':   'OLLAMA_URL',
@@ -54,9 +65,23 @@ ENV_MAP: Dict[str, str] = {
     'wikijs_url':   'WIKIJS_URL',
     'wikijs_token': 'WIKIJS_TOKEN',
     'anthropic_api_key': 'ANTHROPIC_API_KEY',
+    'web_sourcing_enabled': 'WEB_SOURCING_ENABLED',
+    'searxng_url': 'SEARXNG_URL',
+    'web_sourcing_max_sources': 'WEB_SOURCING_MAX_SOURCES',
+    'web_sourcing_results_per_keyword': 'WEB_SOURCING_RESULTS_PER_KEYWORD',
+    'web_sourcing_domain_blacklist': 'WEB_SOURCING_DOMAIN_BLACKLIST',
+    'web_sourcing_domain_allowlist': 'WEB_SOURCING_DOMAIN_ALLOWLIST',
+    'web_sourcing_safe_search': 'WEB_SOURCING_SAFE_SEARCH',
+    'web_sourcing_probe_url': 'WEB_SOURCING_PROBE_URL',
+    'web_sourcing_probe_timeout': 'WEB_SOURCING_PROBE_TIMEOUT',
 }
 # Fields never echoed back to the browser in clear text (and encrypted at rest).
 SECRET_KEYS = {'wikijs_token', 'anthropic_api_key'}
+# Multi-line list fields that the UI must be able to CLEAR: save() always overwrites
+# these (even with an empty submission) instead of the usual skip-empty rule, so the
+# config page is the source of truth for the domain rules (spec A gotcha 2, Gate-2
+# ruling — otherwise a blacklist/allowlist could never be emptied from the UI).
+LIST_KEYS = {'web_sourcing_domain_blacklist', 'web_sourcing_domain_allowlist'}
 
 
 class Settings:
@@ -92,6 +117,11 @@ class Settings:
         env = os.getenv(ENV_MAP.get(key, ''), '')
         return env if env else DEFAULTS.get(key, '')
 
+    def get_bool(self, key: str) -> bool:
+        """Typed boolean read over the string-only store (spec A gotcha 1). Anything
+        not in the truthy set is False, so a malformed value fails safe (off)."""
+        return str(self.get(key)).strip().lower() in ('1', 'true', 'yes', 'on')
+
     def source_of(self, key: str) -> str:
         """Where the effective value is coming from — shown on the config page so the
         user understands why a field is populated."""
@@ -119,12 +149,20 @@ class Settings:
     def save(self, updates: Dict[str, str]) -> None:
         """Persist non-empty known keys. An empty submission leaves a field unchanged
         (so a blank token box doesn't wipe a stored token); to clear a value, edit or
-        delete settings.json directly. Secret fields are encrypted at rest when a
-        cipher is available."""
+        delete settings.json directly. Exception: LIST_KEYS are always overwritten
+        when submitted — including with an empty value — so the domain blacklist/
+        allowlist can be cleared from the config page (spec A gotcha 2). Secret
+        fields are encrypted at rest when a cipher is available."""
         for k in DEFAULTS:
-            if k in updates and str(updates[k]).strip():
-                val = str(updates[k]).strip()
-                if k in SECRET_KEYS and self._cipher:
-                    val = ENC_PREFIX + self._cipher.encrypt(val.encode()).decode()
-                self._data[k] = val
+            if k not in updates:
+                continue
+            val = str(updates[k]).strip()
+            if k in LIST_KEYS:
+                self._data[k] = val  # always-overwrite: UI is source of truth for rules
+                continue
+            if not val:
+                continue
+            if k in SECRET_KEYS and self._cipher:
+                val = ENC_PREFIX + self._cipher.encrypt(val.encode()).decode()
+            self._data[k] = val
         self.path.write_text(json.dumps(self._data, indent=2), encoding='utf-8')

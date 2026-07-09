@@ -1,0 +1,18 @@
+# Refinery SearXNG overrides (opt-in `websearch` compose profile — FG-H5).
+# Inherits upstream defaults, then enables the JSON API (off by default) and
+# disables the bot-limiter so refinery/websource.py's automated, non-browser
+# requests aren't rejected. Carried from ForgeOS searxng/settings.yml per the
+# web-sourcing spec (section D, Option 1).
+use_default_settings: true
+
+server:
+  # Use environment variable for security; falls back to random if not set
+  secret_key: "${SEARXNG_SECRET_KEY:-}"
+  limiter: false
+  image_proxy: false
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
