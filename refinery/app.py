@@ -637,9 +637,29 @@ def config_page(request:Request, notice:Optional[str]=None):
     return templates.TemplateResponse(request, 'config.html', {'settings':SETTINGS.view(),'ollama':oll,'notice':notice})
 
 
+def _checkbox_str(value: str) -> str:
+    """An unchecked HTML checkbox posts NOTHING and Settings.save() skips empties, so
+    a toggle could never persist as false through the normal path. Translate the
+    posted value (or its absence) into an explicit 'true'/'false' string — the fix
+    the web-sourcing spec mandates for every checkbox (spec A gotcha 1)."""
+    return 'true' if str(value).strip().lower() in ('1','true','yes','on') else 'false'
+
+
 @app.post('/config/save')
-def config_save(ollama_url:str=Form(''),ollama_model:str=Form(''),wikijs_url:str=Form(''),wikijs_token:str=Form(''),anthropic_api_key:str=Form('')):
-    SETTINGS.save({'ollama_url':ollama_url,'ollama_model':ollama_model,'wikijs_url':wikijs_url,'wikijs_token':wikijs_token,'anthropic_api_key':anthropic_api_key})
+def config_save(ollama_url:str=Form(''),ollama_model:str=Form(''),wikijs_url:str=Form(''),wikijs_token:str=Form(''),anthropic_api_key:str=Form(''),
+                web_sourcing_enabled:str=Form(''),searxng_url:str=Form(''),web_sourcing_max_sources:str=Form(''),web_sourcing_results_per_keyword:str=Form(''),
+                web_sourcing_domain_blacklist:str=Form(''),web_sourcing_domain_allowlist:str=Form(''),web_sourcing_safe_search:str=Form('')):
+    SETTINGS.save({'ollama_url':ollama_url,'ollama_model':ollama_model,'wikijs_url':wikijs_url,'wikijs_token':wikijs_token,'anthropic_api_key':anthropic_api_key,
+                   # Checkboxes are always persisted as explicit 'true'/'false'; the two
+                   # domain-list textareas are ALWAYS-OVERWRITE in Settings.save() so the
+                   # blacklist/allowlist can be cleared from the UI (spec A gotcha 2).
+                   'web_sourcing_enabled':_checkbox_str(web_sourcing_enabled),
+                   'searxng_url':searxng_url,
+                   'web_sourcing_max_sources':web_sourcing_max_sources,
+                   'web_sourcing_results_per_keyword':web_sourcing_results_per_keyword,
+                   'web_sourcing_domain_blacklist':web_sourcing_domain_blacklist,
+                   'web_sourcing_domain_allowlist':web_sourcing_domain_allowlist,
+                   'web_sourcing_safe_search':_checkbox_str(web_sourcing_safe_search)})
     return RedirectResponse('/config?notice=Settings+saved',status_code=303)
 
 

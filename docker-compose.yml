@@ -64,5 +64,23 @@ services:
       - refinery
     profiles: ["tunnel"]
 
+  # SearXNG metasearch — opt-in:  docker compose --profile websearch up -d
+  # Backs the /config "Web sourcing" feature (FG-H5): set the SearXNG URL there to
+  # http://searxng:8080 and tick "Enable web sourcing". Internal-only — no host
+  # port; only the refinery container reaches it over the compose network. Nothing
+  # runs (and Refinery stays fully offline) unless this profile is started.
+  # Config lives in ./searxng/settings.yml (enables the JSON API the client needs).
+  searxng:
+    image: searxng/searxng:latest
+    container_name: vas-refinery-searxng
+    restart: unless-stopped
+    environment:
+      # Required only when running the websearch profile; generate any long random
+      # string. SearXNG refuses automated JSON queries without a stable secret.
+      SEARXNG_SECRET_KEY: ${SEARXNG_SECRET_KEY:-}
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    profiles: ["websearch"]
+
 volumes:
   refinery_data:
