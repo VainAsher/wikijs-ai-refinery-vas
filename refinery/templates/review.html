@@ -129,6 +129,7 @@
       <div class="row">
         <div><label>Ollama model <span class="muted small">blank = configured default</span></label><input name="ollama_model" placeholder="e.g. mistral:latest"></div>
         <div style="flex:none"><label class="checkrow"><input type="checkbox" name="deterministic" value="1"> Deterministic <span class="muted small">(skip Ollama — fast)</span></label></div>
+        <div style="flex:none"><label class="checkrow"><input type="checkbox" name="use_web_sources" value="1"> Web sources <span class="muted small">(per-run opt-in — needs web sourcing enabled in Config)</span></label></div>
         <div style="flex:none"><label>&nbsp;</label><button data-tip="Run all passes in the background and create a draft for review.">Run pipeline</button></div>
       </div>
     </form>

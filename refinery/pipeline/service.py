@@ -32,11 +32,13 @@ def run_and_persist(store, config: PipelineConfig, *, source_doc_id: int, taxono
                     target_action: str = 'rewrite_into_customer_guide',
                     service: str = 'unknown', audience: str = 'unknown',
                     collections: Optional[Dict[str, Any]] = None,
+                    settings: Optional[Any] = None, use_web_sources: bool = False,
                     progress: Optional[Callable[[int, int, str], None]] = None) -> Dict[str, Any]:
     source = load_source_doc(store, source_doc_id)
     deps = PassDeps(taxonomy=taxonomy, brand=brand or {}, model=model, ollama_url=ollama_url,
                     context_builder=ContextBuilder(collections=collections or {}, retriever=keyword_rank),
-                    source_content=source.content, source_doc=source)
+                    source_content=source.content, source_doc=source,
+                    settings=settings, use_web_sources=use_web_sources)
     run_id = store.add_pipeline_run(pipeline_id=config.id, source_doc_ids=[source_doc_id],
                                     target_action=target_action, service=service, audience=audience)
     result = run_pipeline(config, deps, target_action=target_action, service=service,

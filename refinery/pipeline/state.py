@@ -39,6 +39,8 @@ class PipelineState:
     current_markdown: str = ''
     classification: Dict[str, Any] = dataclasses.field(default_factory=dict)
     approved_facts: List[str] = dataclasses.field(default_factory=list)
+    fact_blocks: List[Dict[str, Any]] = dataclasses.field(default_factory=list)   # FactBlock dicts (claim, citation_id)
+    citations: List[Dict[str, Any]] = dataclasses.field(default_factory=list)     # CitationRecord dicts (id, source_name, url|local_path)
     assumptions: List[str] = dataclasses.field(default_factory=list)
     risks: List[str] = dataclasses.field(default_factory=list)
     warnings: List[str] = dataclasses.field(default_factory=list)

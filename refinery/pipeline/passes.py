@@ -15,7 +15,9 @@ from refinery.core import (
     SourceDoc, brand_compliance, clean_markdown, deterministic_classify, extract_facts,
     ollama_json, ollama_text, scrub_findings,
 )
+from refinery import websource
 from refinery.chunking import chunk_markdown
+from refinery.citations import attribute_facts, validate_claims
 from refinery.pipeline.context import ContextBuilder
 from refinery.pipeline.schema import PassConfig
 from refinery.pipeline.state import PipelineState, PassReport
@@ -30,6 +32,12 @@ class PassDeps:
     context_builder: Optional[ContextBuilder] = None
     source_content: str = ''
     source_doc: Optional[SourceDoc] = None
+    # FG-H3 web-enrichment guards. `settings` is a refinery.settings.Settings store
+    # (None = no store: enrichment stays local-only); use_web_sources is the PER-RUN
+    # opt-in — the master flag (web_sourcing_enabled) lives on the settings store and
+    # both, plus a searxng_url, are required before websource.search() fetches.
+    settings: Optional[object] = None
+    use_web_sources: bool = False
 
 
 _RISK_WORDS = ('warning', 'caution', 'danger', 'irreversible', 'destructive', 'data loss',
@@ -80,10 +88,38 @@ def _fact_find(config: PassConfig, state: PipelineState, deps: PassDeps) -> Pass
     facts = extract_facts(doc, deps.model, deps.ollama_url)      # llm_optional; deterministic fallback inside
     state.approved_facts = facts.get('facts', [])
     state.risks = _extract_risks(doc.content)
+
+    # FG-H3 citation channel — ONE code path for web-enriched and local-only runs.
+    # websource.search() carries its own guards (master flag AND per-run opt-in AND
+    # searxng_url) and short-circuits to [] BEFORE any HTTP object exists, so with
+    # the feature dark this same call completes local-only with zero outbound HTTP.
+    blacklist: list = []
+    allowlist: list = []
+    web_facts: list = []
+    if deps.settings is not None:
+        blacklist = websource.parse_domain_list(deps.settings.get('web_sourcing_domain_blacklist'))
+        allowlist = websource.parse_domain_list(deps.settings.get('web_sourcing_domain_allowlist'))
+        web_facts = websource.search(facts.get('keywords', []), deps.settings,
+                                     use_web_sources=deps.use_web_sources)
+        seen = set()  # the same page can surface under several keywords — keep one
+        web_facts = [f for f in web_facts
+                     if f.get('url') not in seen and not seen.add(f.get('url'))]
+    fact_blocks, cites = attribute_facts(
+        doc=doc, web_facts=web_facts, blacklist=blacklist, allowlist=allowlist,
+        model=deps.model, ollama_url=deps.ollama_url,
+        local_claims=state.approved_facts)                       # reuse, don't re-extract
+    verified, rejected = validate_claims(fact_blocks, cites)     # Auditor discipline
+    state.warnings.extend(
+        f'rejected claim (cites unknown {fb.citation_id}): {fb.claim}' for fb in rejected)
+    state.fact_blocks = [dataclasses.asdict(fb) for fb in fact_blocks]
+    state.citations = [dataclasses.asdict(c) for c in cites]
+
     return PassReport(pass_id=config.id, mode=('llm' if deps.model else 'deterministic'),
                       changed=bool(state.approved_facts),
                       metadata={'fact_count': len(state.approved_facts), 'risk_count': len(state.risks),
                                 'keywords': facts.get('keywords', []),
+                                'citation_count': len(cites), 'web_source_count': len(web_facts),
+                                'rejected_claim_count': len(rejected),
                                 'note': 'facts are review candidates, not approved truth'})
 
 
