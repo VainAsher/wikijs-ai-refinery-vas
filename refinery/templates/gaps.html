@@ -25,7 +25,7 @@
     </tbody>
   </table></div>
   {% else %}
-  <div class="empty"><h3>No gaps detected</h3><p>Every service has VAS-owned coverage. Import more sources to surface new gaps.</p></div>
+  <div class="empty"><h3>No gaps detected</h3><p>Every service has {{ org_tag }}-owned coverage. Import more sources to surface new gaps.</p></div>
   {% endif %}
 </div>
 
@@ -33,13 +33,13 @@
   <summary>Full coverage by service <span class="sub">— owned vs reference counts</span></summary>
   <div class="body">
     <div class="table-wrap"><table class="responsive">
-      <thead><tr><th>Service</th><th>Total</th><th>VAS-owned</th><th>Reference</th></tr></thead>
+      <thead><tr><th>Service</th><th>Total</th><th>{{ org_tag }}-owned</th><th>Reference</th></tr></thead>
       <tbody>
       {% for c in coverage %}
       <tr>
         <td data-label="Service"><a href="/?service={{ c.service }}&page_size=100">{{ c.service }}</a></td>
         <td data-label="Total">{{ c.total }}</td>
-        <td data-label="VAS-owned"><span class="pill {% if c.owned %}ok{% endif %}">{{ c.owned }}</span></td>
+        <td data-label="{{ org_tag }}-owned"><span class="pill {% if c.owned %}ok{% endif %}">{{ c.owned }}</span></td>
         <td data-label="Reference">{{ c.reference }}</td>
       </tr>
       {% endfor %}

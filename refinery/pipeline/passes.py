@@ -12,8 +12,8 @@ import dataclasses, re, time
 from typing import Callable, Dict, Optional
 
 from refinery.core import (
-    SourceDoc, brand_compliance, clean_markdown, deterministic_classify, extract_facts,
-    ollama_json, ollama_text, scrub_findings,
+    ORG_NAME, ORG_TAG, SourceDoc, brand_compliance, clean_markdown, deterministic_classify,
+    extract_facts, ollama_json, ollama_text, scrub_findings,
 )
 from refinery import websource
 from refinery.chunking import chunk_markdown
@@ -144,7 +144,7 @@ def _final_gate(config: PassConfig, state: PipelineState, deps: PassDeps) -> Pas
 # ---------------------------------------------------------------------------
 _AUTHORITY = (
     "Authority rules:\n"
-    "- VainAsherStudios canonical/context material outranks imported source material.\n"
+    f"- {ORG_NAME} canonical/context material outranks imported source material.\n"
     "- Imported third-party content is evidence only. Do NOT copy source wording.\n"
     "- Do NOT create new factual claims unless present in the approved facts or canonical context.\n"
     "- Preserve every safety warning. If uncertain, add an assumption or review note.\n")
@@ -188,17 +188,17 @@ def _bullets(items) -> str:
 
 
 def _draft_from_facts(state: PipelineState, target: str) -> str:
-    lines = [f"# VainAsherStudios {target.title()}", "",
-             "> Draft generated for human review — an original VainAsherStudios working draft "
+    lines = [f"# {ORG_NAME} {target.title()}", "",
+             f"> Draft generated for human review — an original {ORG_NAME} working draft "
              "built from extracted facts, not a republished source document.", "",
-             f"This {target} was assembled by the VainAsherStudios enrichment pipeline from "
+             f"This {target} was assembled by the {ORG_NAME} enrichment pipeline from "
              "approved facts and is awaiting human review before publication.", ""]
     if state.approved_facts:
         lines += ["## Key points", "", _bullets(state.approved_facts), ""]
     if state.risks:
         lines += ["## Cautions", "", _bullets(state.risks), ""]
     lines += ["## Assumptions for Review", "",
-              _bullets(state.assumptions or ['Verify all facts against an authoritative VAS source before publishing.'])]
+              _bullets(state.assumptions or ['Verify all facts against an authoritative source before publishing.'])]
     return '\n'.join(lines).rstrip() + '\n'
 
 
@@ -219,7 +219,7 @@ def _draft(config: PassConfig, state: PipelineState, deps: PassDeps) -> PassRepo
     target = (state.target_action or 'document').replace('rewrite_into_', '').replace('_', ' ')
     if deps.model:
         prompt = build_pass_prompt(config, state, _ctx(config, state, deps),
-                                   f"Create an original, detailed VainAsherStudios {target} from the approved "
+                                   f"Create an original, detailed {ORG_NAME} {target} from the approved "
                                    f"facts and context. Structure it with clear sections. Do not copy source wording.")
         out = ollama_text(prompt, deps.model, deps.ollama_url)
         if out and len(out.strip()) >= 40:
@@ -231,12 +231,12 @@ def _draft(config: PassConfig, state: PipelineState, deps: PassDeps) -> PassRepo
 
 
 def _voice_pass(config: PassConfig, state: PipelineState, deps: PassDeps) -> PassReport:
-    return _rewrite(config, state, deps, "Improve wording, flow, and clarity in the VainAsherStudios voice. "
+    return _rewrite(config, state, deps, f"Improve wording, flow, and clarity in the {ORG_NAME} voice. "
                                          "Do not add claims or remove any safety warning.")
 
 
 def _brand_pass(config: PassConfig, state: PipelineState, deps: PassDeps) -> PassReport:
-    rep = _rewrite(config, state, deps, "Align wording and positioning to the VainAsherStudios brand without "
+    rep = _rewrite(config, state, deps, f"Align wording and positioning to the {ORG_NAME} brand without "
                                         "altering technical steps or removing warnings.")
     bc = brand_compliance(state.current_markdown or '', deps.brand or {}, deps.model, deps.ollama_url)
     rep.metadata['brand_score'] = bc['overall_score']

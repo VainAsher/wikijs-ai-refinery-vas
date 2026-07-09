@@ -29,7 +29,7 @@
     <h3 style="margin-top:14px">Vetted facts <span class="muted small">— one per line; delete any you can't confirm</span></h3>
     <textarea name="verified_facts" style="min-height:240px">{{ facts.facts|join('\n') }}</textarea>
     <div class="actions" style="margin-top:14px">
-      <button data-tip="Generates the VAS draft using only the facts you approved above.">Accept facts &amp; generate draft</button>
+      <button data-tip="Generates the {{ org_tag }} draft using only the facts you approved above.">Accept facts &amp; generate draft</button>
       <a class="button secondary" href="/docs/{{ row.id }}">Cancel</a>
     </div>
   </div>

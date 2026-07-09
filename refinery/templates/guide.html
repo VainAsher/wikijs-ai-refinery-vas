@@ -3,13 +3,13 @@
 <div class="pagehead">
   <div>
     <h2>Guide</h2>
-    <p class="muted">How the refinery turns raw imported docs into VAS-owned, governed knowledge — and where everything lives.</p>
+    <p class="muted">How the refinery turns raw imported docs into {{ org_tag }}-owned, governed knowledge — and where everything lives.</p>
   </div>
   <a class="button" href="/">Open the queue</a>
 </div>
 
 <div class="card notice">
-  <strong>The one rule:</strong> imported third-party content is <em>evidence, not truth</em>. You import &rarr; classify &rarr; rewrite into an original VAS draft &rarr; review &rarr; publish. Reference docs are never published verbatim.
+  <strong>The one rule:</strong> imported third-party content is <em>evidence, not truth</em>. You import &rarr; classify &rarr; rewrite into an original {{ org_tag }} draft &rarr; review &rarr; publish. Reference docs are never published verbatim.
 </div>
 
 <!-- WORKFLOW ------------------------------------------------------------- -->
@@ -19,7 +19,7 @@
     <div><div class="step"><span class="num">1</span><div><strong>Import</strong><div class="muted small">Bulk Workbench or Connectors pull raw docs into the queue.</div></div></div></div>
     <div><div class="step"><span class="num">2</span><div><strong>Classify</strong><div class="muted small">Each doc is auto-tagged with source, service, risk &amp; governance.</div></div></div></div>
     <div><div class="step"><span class="num">3</span><div><strong>Triage</strong><div class="muted small">Filter the queue; bulk-set actions on whole groups.</div></div></div></div>
-    <div><div class="step"><span class="num">4</span><div><strong>Transform</strong><div class="muted small">Rewrite a reference doc into an original VAS draft (AI optional).</div></div></div></div>
+    <div><div class="step"><span class="num">4</span><div><strong>Transform</strong><div class="muted small">Rewrite a reference doc into an original {{ org_tag }} draft (AI optional).</div></div></div></div>
     <div><div class="step"><span class="num">5</span><div><strong>Review</strong><div class="muted small">Edit, approve, or mark canonical in the browser editor.</div></div></div></div>
     <div><div class="step"><span class="num">6</span><div><strong>Publish</strong><div class="muted small">Push approved docs to Wiki.js (or Export to Markdown).</div></div></div></div>
   </div>
@@ -35,7 +35,7 @@
         <tr><td data-label="Page"><a href="/">Docs</a></td><td data-label="For">The in-flight review queue. Filter, paginate, open, approve.</td></tr>
         <tr><td data-label="Page"><a href="/bulk">Bulk</a></td><td data-label="For">Import many local directories at once and batch-update filtered slices.</td></tr>
         <tr><td data-label="Page"><a href="/connectors">Connectors</a></td><td data-label="For">One-off imports from Zendesk, MediaWiki, ClickUp, Google Docs, or local Markdown.</td></tr>
-        <tr><td data-label="Page"><a href="/context">Context</a></td><td data-label="For">Edit the VAS context packs injected into AI rewrites (brand voice, services, rules).</td></tr>
+        <tr><td data-label="Page"><a href="/context">Context</a></td><td data-label="For">Edit the {{ org_tag }} context packs injected into AI rewrites (brand voice, services, rules).</td></tr>
         <tr><td data-label="Page"><a href="/monitor">Monitor</a></td><td data-label="For">Pipeline health: queue counts, governance breakdowns, Ollama &amp; DB status.</td></tr>
         <tr><td data-label="Page"><a href="/config">Config</a></td><td data-label="For">Set the Ollama model/URL and Wiki.js credentials; test model speed live.</td></tr>
         <tr><td data-label="Page"><a href="/export">Export</a></td><td data-label="For">Write reviewed docs to Markdown files with front-matter.</td></tr>
@@ -50,7 +50,7 @@
   <div class="body">
     <div class="three">
       <div class="card" style="margin:0"><strong>Reference / imported</strong><p class="muted small">Source evidence only. Forced non-canonical and not customer-safe. Never published verbatim.</p><span class="pill warn">rewrite required</span></div>
-      <div class="card" style="margin:0"><strong>VAS transformed draft</strong><p class="muted small">An original, editable VAS-owned working doc generated from the reference. Not auto-published.</p><span class="pill">draft</span></div>
+      <div class="card" style="margin:0"><strong>{{ org_tag }} transformed draft</strong><p class="muted small">An original, editable {{ org_tag }}-owned working doc generated from the reference. Not auto-published.</p><span class="pill">draft</span></div>
       <div class="card" style="margin:0"><strong>Reviewed canonical</strong><p class="muted small">Approved source of truth, ready for Wiki.js.</p><span class="pill ok">canonical</span></div>
     </div>
     <p class="hint">Governance is deterministic and runs <em>after</em> any AI step, so a competitor/employer/vendor doc cannot be flagged canonical even if a model suggests it.</p>
@@ -65,7 +65,7 @@
       <li>Open <a href="/bulk">Bulk</a> and paste one <code>label|path</code> per source directory. Use limit <code>0</code> to import everything. Leave the Ollama box empty for a fast deterministic first pass.</li>
       <li>On <a href="/">Docs</a>, filter by <code>source_org</code>, <code>service</code>, and <code>doc_type</code> to find natural groups.</li>
       <li>Back in Bulk, set an <code>adaptation action</code> (e.g. <code>rewrite_into_sop</code>) on a whole filtered slice.</li>
-      <li>Transform the important docs into VAS drafts (add a model like <code>mistral:latest</code> for quality), then review and approve.</li>
+      <li>Transform the important docs into {{ org_tag }} drafts (add a model like <code>mistral:latest</code> for quality), then review and approve.</li>
       <li>Configure Wiki.js in <a href="/config">Config</a> and publish, or use <a href="/export">Export</a>.</li>
     </ol>
   </div>
@@ -97,9 +97,9 @@
         <tr><td data-label="Term"><strong>adaptation_action</strong></td><td data-label="Meaning">The transform target (e.g. <code>rewrite_into_sop</code>, <code>rewrite_into_moderation_playbook</code>).</td></tr>
         <tr><td data-label="Term"><strong>rewrite_status</strong></td><td data-label="Meaning">Lifecycle: <code>needs_rewrite</code> &rarr; <code>draft_generated</code> &rarr; <code>in_review</code> &rarr; <code>approved</code>.</td></tr>
         <tr><td data-label="Term"><strong>authority</strong></td><td data-label="Meaning">Trust level: <code>imported_unreviewed</code>, <code>draft</code>, <code>approved</code>, <code>canonical</code>, <code>archived</code>.</td></tr>
-        <tr><td data-label="Term"><strong>canonical</strong></td><td data-label="Meaning">This is the VAS source of truth. Only reachable for VAS-owned, reviewed docs.</td></tr>
+        <tr><td data-label="Term"><strong>canonical</strong></td><td data-label="Meaning">This is the {{ org_tag }} source of truth. Only reachable for {{ org_tag }}-owned, reviewed docs.</td></tr>
         <tr><td data-label="Term"><strong>customer_safe</strong></td><td data-label="Meaning">Safe to show clients/community. Off by default and forced off for reference docs and sensitive-scan hits.</td></tr>
-        <tr><td data-label="Term"><strong>context pack</strong></td><td data-label="Meaning">A Markdown file of VAS knowledge injected into AI rewrites as higher authority than the source.</td></tr>
+        <tr><td data-label="Term"><strong>context pack</strong></td><td data-label="Meaning">A Markdown file of {{ org_tag }} knowledge injected into AI rewrites as higher authority than the source.</td></tr>
       </tbody>
     </table></div>
   </div>

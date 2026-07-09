@@ -36,7 +36,7 @@
       <span class="pill">draft generated: {{ counts['rewrite_status:draft_generated'] or 0 }}</span>
       <span class="pill ok">approved: {{ counts['rewrite_status:approved'] or 0 }}</span>
     </p>
-    <h3 style="margin-top:14px">VAS-owned</h3>
+    <h3 style="margin-top:14px">{{ org_tag }}-owned</h3>
     <p><span class="pill ok">vainasherstudios: {{ counts['source_org:vainasherstudios'] or 0 }}</span></p>
   </div>
 </div>
@@ -51,7 +51,7 @@
     <div class="stat"><span class="n">{{ runs_summary.with_model }}</span><span class="l">used a model</span></div>
   </div>
   {% else %}
-  <p class="muted">No transforms run yet. Open a reference doc and generate a VAS draft to populate telemetry.</p>
+  <p class="muted">No transforms run yet. Open a reference doc and generate a {{ org_tag }} draft to populate telemetry.</p>
   {% endif %}
 </div>
 

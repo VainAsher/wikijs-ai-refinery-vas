@@ -24,6 +24,11 @@ CONTEXT_DIR=DATA/'vas_context'; CONTEXT_DIR.mkdir(parents=True,exist_ok=True)
 BRAND_PATH=DATA/'brand.yaml'
 app=FastAPI(title='Wiki.js AI Refinery - VAS Community Ops')
 templates=Jinja2Templates(directory=str(BASE/'templates'))
+# Instance identity for the UI (D13/D15). ORG_TAG rides in from core so the
+# short brand tag in labels follows the same env the prompts use.
+from refinery.core import ORG_TAG as _ORG_TAG
+INSTANCE_NAME=os.getenv('REFINERY_INSTANCE_NAME','VAS Refinery')
+templates.env.globals.update(instance_name=INSTANCE_NAME, org_tag=_ORG_TAG)
 
 # Optional HTTP Basic Auth — defense-in-depth when the app is exposed (e.g. behind a
 # Cloudflare tunnel). Active only when BOTH env vars are set, so local dev and tests

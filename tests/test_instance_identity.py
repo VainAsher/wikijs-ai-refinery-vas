@@ -1,0 +1,197 @@
+"""D13/D15 CONTRACT TESTS: instance identity from configuration.
+
+The D13 fork assessment (2026-07-09) found the business/training split is
+already configuration (taxonomy.yml, per-volume brand/context packs) except
+for one thing: the app's own identity. "VAS" is hardwired in ~27 template
+strings, and - worse - in the transform/pipeline prompts and draft titles,
+so a training-refinery stamp would VAS-brand every artifact it generates.
+Making identity configurable is also the first concrete piece of tenant
+content de-branding (D10).
+
+Desired surface (all defaults preserve today's behavior):
+- env REFINERY_INSTANCE_NAME (default "VAS Refinery"): the UI's name -
+  page <title> and header brand - exposed to templates as a Jinja global.
+- env REFINERY_ORG_TAG (default "VAS"): short tag for UI labels
+  ("VAS drafts", "VAS-owned") and generated draft titles ("VAS Draft - x").
+- env REFINERY_ORG_NAME (default "VainAsherStudios"): the org name inside
+  generation prompts ("Write in the X voice", "an original X {target}").
+- env REFINERY_ORG_LINE (default the current VainAsherStudios audience
+  sentence): the "Adapt for ..." line inside the transform prompt.
+- No hardcoded brand outside the env defaults: templates render the
+  globals; core.py and pipeline/passes.py build prompts from the ORG_*
+  constants, so a stamp with different envs is fully de-branded - UI and
+  generated content both.
+
+These tests are EXPECTED TO FAIL before the fix. Env-dependent tests
+reload refinery modules with patched env and restore afterwards (conftest
+already isolates REFINERY_DATA before any import).
+
+Note on adaptation-action scoping (the other half of the streamline): that
+needs NO code - load_taxonomy() lets taxonomy.yml replace the
+adaptation_actions list wholesale, and review.html builds the Target
+dropdown from it. test_taxonomy_can_scope_adaptation_actions pins that
+load-bearing behavior so a refactor can't silently break the stamp.
+"""
+from __future__ import annotations
+
+import importlib
+import os
+import re
+from pathlib import Path
+
+import pytest
+
+PKG = Path(__file__).resolve().parent.parent / 'refinery'
+TEMPLATES = PKG / 'templates'
+
+IDENTITY_ENVS = ('REFINERY_INSTANCE_NAME', 'REFINERY_ORG_TAG',
+                 'REFINERY_ORG_NAME', 'REFINERY_ORG_LINE')
+
+
+def _reload_all():
+    import refinery.core, refinery.pipeline.passes, refinery.app
+    importlib.reload(refinery.core)
+    importlib.reload(refinery.pipeline.passes)
+    return importlib.reload(refinery.app)
+
+
+@pytest.fixture
+def reloaded_modules():
+    yield _reload_all
+    for key in IDENTITY_ENVS:
+        os.environ.pop(key, None)
+    _reload_all()
+
+
+def test_default_identity_is_unchanged(client):
+    # The business instance must not notice this patch.
+    html = client.get('/').text
+    assert 'VAS' in html, 'default instance keeps its VAS identity'
+
+
+def test_templates_carry_no_hardcoded_brand():
+    offenders = {}
+    for page in sorted(TEMPLATES.glob('*.html')):
+        hits = [n for n, line in enumerate(page.read_text(encoding='utf-8').splitlines(), 1)
+                if re.search(r'\bVAS\b', line)]
+        if hits:
+            offenders[page.name] = hits
+    assert not offenders, (
+        'templates must take identity from the instance_name/org_tag globals, '
+        f'not hardcoded "VAS" - offenders: {offenders}'
+    )
+
+
+def test_prompt_sources_carry_no_brand_outside_env_defaults():
+    # core.py and pipeline/passes.py generate content; after the fix their
+    # only brand mentions are the ORG_* env defaults (one definition site
+    # each, marked by the env var name on the same line or the line above).
+    offenders = {}
+    for path in (PKG / 'core.py', PKG / 'pipeline' / 'passes.py'):
+        lines = path.read_text(encoding='utf-8').splitlines()
+        hits = []
+        for n, line in enumerate(lines, 1):
+            if 'VainAsherStudios' in line or re.search(r"\bVAS\b", line):
+                window = ' '.join(lines[max(0, n - 2):n])
+                if 'REFINERY_ORG_' in line or 'REFINERY_ORG_' in window:
+                    continue  # the env-default definition site
+                if line.lstrip().startswith('#'):
+                    continue  # comments may explain history
+                hits.append(n)
+        if hits:
+            offenders[path.name] = hits
+    assert not offenders, (
+        'generation prompts/titles must come from the ORG_* constants so a '
+        f'stamp is de-branded - hardcoded brand at: {offenders}'
+    )
+
+
+def test_instance_name_env_rebrands_the_ui(reloaded_modules):
+    os.environ['REFINERY_INSTANCE_NAME'] = 'Training Refinery'
+    os.environ['REFINERY_ORG_TAG'] = 'Training'
+    app_mod = reloaded_modules()
+    from fastapi.testclient import TestClient
+    html = TestClient(app_mod.app).get('/').text
+    assert 'Training Refinery' in html, (
+        'REFINERY_INSTANCE_NAME must drive the page title/brand'
+    )
+    # Chrome only: stored DOCUMENTS may legitimately mention VAS (e.g. drafts
+    # generated by other tests against the shared session store) - what must
+    # not leak is the default instance branding itself.
+    assert 'VAS Refinery' not in html and 'VAS drafts' not in html, (
+        'a renamed instance must not leak the default brand in its chrome'
+    )
+
+
+def test_transform_prompt_and_titles_use_org_env(reloaded_modules, monkeypatch):
+    os.environ['REFINERY_ORG_TAG'] = 'AcmeTraining'
+    os.environ['REFINERY_ORG_NAME'] = 'Acme'
+    os.environ['REFINERY_ORG_LINE'] = 'Acme trainee-facing support training material'
+    reloaded_modules()
+    import refinery.core as core
+
+    doc = core.SourceDoc(title='Restarting a stuck server', content='# Doc\nBody.', source='test')
+    taxonomy = core.load_taxonomy(None)
+    c = core.deterministic_classify(doc, taxonomy)
+
+    prompts: list[str] = []
+    monkeypatch.setattr(
+        core, 'ollama_text',
+        lambda prompt, model, url, **kw: prompts.append(prompt) or '# Acme Draft\n\nBody text long enough to pass the length gate. ' * 3,
+    )
+    result = core.transform_to_vas(doc, c, 'rewrite_into_training', model='fake-model')
+    assert prompts, 'transform with a model must build a prompt'
+    joined = '\n'.join(prompts)
+    assert 'Acme trainee-facing support training material' in joined, (
+        'REFINERY_ORG_LINE must replace the hardcoded audience line'
+    )
+    assert 'VainAsherStudios' not in joined and not re.search(r'\bVAS\b', joined), (
+        'transform prompt must not brand generated content with the default org'
+    )
+
+    # Fallback path (no model): deterministic draft title uses the org tag.
+    fallback = core.transform_to_vas(doc, c, 'rewrite_into_training', model=None)
+    assert fallback.title.startswith('AcmeTraining Draft'), (
+        f'fallback draft title must use REFINERY_ORG_TAG, got {fallback.title!r}'
+    )
+    assert 'VAS ' not in fallback.title
+
+
+def test_classifier_reasons_are_org_neutral(taxonomy):
+    import refinery.core as core
+    doc = core.SourceDoc(title='Authentik outpost guide', content='# Authentik\nUpstream docs.',
+                         source='authentik')
+    c = core.deterministic_classify(doc, taxonomy)
+    joined = ' '.join(c.reasons)
+    assert not re.search(r'\bVAS\b', joined), (
+        'classifier reasons render in the review UI on every instance - '
+        f'use neutral wording ("owned"), got: {joined!r}'
+    )
+
+
+def test_taxonomy_can_scope_adaptation_actions(tmp_path):
+    # PIN (already true today): a stamp's taxonomy.yml can replace the
+    # action list wholesale, and that is how the training instance scopes
+    # its Target dropdown - no code involved. Guard it against refactors.
+    import refinery.core as core
+    scoped = tmp_path / 'taxonomy.yml'
+    scoped.write_text(
+        'adaptation_actions:\n'
+        '  - none\n'
+        '  - reference_only\n'
+        '  - rewrite_into_training\n'
+        '  - rewrite_into_bisectbot_mission\n'
+        '  - rewrite_into_ticketlab_scenario\n'
+        '  - rewrite_into_quiz\n'
+        '  - reject_archive\n',
+        encoding='utf-8',
+    )
+    merged = core.load_taxonomy(str(scoped))
+    assert merged['adaptation_actions'] == [
+        'none', 'reference_only', 'rewrite_into_training',
+        'rewrite_into_bisectbot_mission', 'rewrite_into_ticketlab_scenario',
+        'rewrite_into_quiz', 'reject_archive',
+    ]
+    assert 'rewrite_into_linkedin_post' not in merged['adaptation_actions']
+    # untouched keys still fall back to defaults
+    assert merged['doc_types'] == core.DEFAULT_TAXONOMY['doc_types']
